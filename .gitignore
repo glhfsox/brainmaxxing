@@ -1,0 +1,38 @@
+# Build artifacts and tool junk
+.build/
+.swiftpm/
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+build/
+*.dSYM/
+*.o
+*.a
+*.dylib
+*.app
+*.dmg
+*.ipa
+
+# Runtime data and logs (never commit the digest DB)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.log
+
+# Secrets and local env
+.env
+.env.*
+*.pem
+*.p12
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Web bundle tooling (vendored libs under Resources/DigestWeb/vendor are committed)
+node_modules/
+npm-debug.log*

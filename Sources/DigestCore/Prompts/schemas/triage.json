@@ -1,0 +1,23 @@
+{
+  "description": "Triage of one batch of papers against the reader's interest profile. One entry per input paper.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["results"],
+  "properties": {
+    "results": {
+      "description": "Exactly one entry for every paper in the input, in input order. No missing, repeated or invented ids.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "one_line", "tags", "score"],
+        "properties": {
+          "id":       {"description": "The paper's id, copied verbatim from the input.", "type": "string"},
+          "one_line": {"description": "Why the paper matters or doesn't for this reader's profile, in the requested language. Written before the score; no filler, no restated title.", "type": "string", "maxLength": 200},
+          "tags":     {"description": "1-5 lowercase tags from the prompt's vocabulary, for grouping only.", "type": "array", "items": {"type": "string"}, "maxItems": 5},
+          "score":    {"description": "Integer 0-10 read from the prompt's scoring table, relative to this reader's profile.", "type": "integer", "minimum": 0, "maximum": 10}
+        }
+      }
+    }
+  }
+}

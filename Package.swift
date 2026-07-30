@@ -17,7 +17,8 @@ let package = Package(
             name: "DigestCore",
             dependencies: [
                 .product(name: "GRDB", package: "GRDB.swift"),
-            ]
+            ],
+            resources: [.copy("Prompts")]
         ),
         .executableTarget(
             name: "DigestCLI",

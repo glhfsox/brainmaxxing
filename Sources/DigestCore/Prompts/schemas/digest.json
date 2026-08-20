@@ -1,0 +1,21 @@
+{
+  "description": "Today's digest for one reader, written from the <run> bundle. One call per run.",
+  "type": "object", "additionalProperties": false,
+  "required": ["title", "summary", "clusters", "papers", "hf_section", "trend_notes"],
+  "properties": {
+    "title":   {"description": "Thematic title of the day, at most 10 words, no date, in the requested language.", "type": "string"},
+    "summary": {"description": "2-4 sentences on what today's papers are about, as a whole.", "type": "string"},
+    "clusters": {"description": "Groups of 2 or more papers that genuinely overlap. Empty array if none do. Each paper is in at most one cluster.", "type": "array", "items": {"type": "object", "additionalProperties": false,
+      "required": ["id", "name", "paper_ids", "narrative"],
+      "properties": {"id": {"description": "c1, c2, ... in array order.", "type": "string"}, "name": {"description": "Short name of the shared problem, 2-6 words.", "type": "string"},
+                     "paper_ids": {"description": "At least 2 ids from the bundle, copied verbatim.", "type": "array", "items": {"type": "string"}}, "narrative": {"description": "Markdown that connects the papers; every claim cites its paper as [id].", "type": "string"}}}},
+    "papers": {"description": "Exactly one entry per paper in the bundle, in bundle order, ids copied verbatim.", "type": "array", "items": {"type": "object", "additionalProperties": false,
+      "required": ["id", "cluster_id", "essence", "detail", "why_it_matters", "caveats", "figure_index", "mermaid"],
+      "properties": {"id": {"description": "The paper's id, copied verbatim from the bundle.", "type": "string"}, "cluster_id": {"description": "The id of the cluster that lists this paper, or \"\" if unclustered.", "type": "string"}, "essence": {"description": "2-3 sentences: the contribution, at the requested explanation level.", "type": "string"},
+                     "detail": {"description": "Markdown: method, key equations in $...$, headline numbers against the baselines named in the text.", "type": "string"}, "why_it_matters": {"description": "Why this matters to this reader's profile, 1-2 sentences.", "type": "string"}, "caveats": {"description": "What the text does not show or support, or \"\" if nothing worth saying.", "type": "string"},
+                     "figure_index": {"description": "index of the figure in this paper's <figures> that best explains the method, or 0 for none.", "type": "integer"}, "mermaid": {"description": "Mermaid flowchart or sequenceDiagram body without code fences, or \"\" when the method has no real flow of 3 or more components.", "type": "string"}}}},
+    "hf_section": {"description": "One entry per paper listed in <hf_papers>; [] when it is (none).", "type": "array", "items": {"type": "object", "additionalProperties": false,
+      "required": ["id", "one_line"], "properties": {"id": {"description": "The id as given in <hf_papers>.", "type": "string"}, "one_line": {"description": "One line on what the paper does, from what <hf_papers> gives.", "type": "string"}}}},
+    "trend_notes": {"description": "A topic that recurs across <recent_clusters> and today, or \"\" when nothing does.", "type": "string"}
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "title": "Rigs, motion and the cost of coupling",
+  "summary": "Two papers co-generate motion with video [2610.00019] [2610.00028]; one measures it.",
+  "clusters": [
+    {
+      "id": "c7",
+      "name": "Video-motion co-generation",
+      "paper_ids": ["2610.00019", "2610.00028", "9999.99999"],
+      "narrative": "[2610.00019] and [2610.00028] both couple a motion model to a video model; [2610.00019] via cross-attention bridges."
+    },
+    {
+      "id": "c9",
+      "name": "Leftover",
+      "paper_ids": ["2610.00037", "2610.00019"],
+      "narrative": "Only one valid paper remains here after dedup: [2610.00037]."
+    }
+  ],
+  "papers": [
+    {
+      "id": "2610.00028",
+      "cluster_id": "c9",
+      "essence": "Second paper essence.",
+      "detail": "Uses $x^2$.",
+      "why_it_matters": "Relevant to agents.",
+      "caveats": "",
+      "figure_index": 2,
+      "mermaid": ""
+    },
+    {
+      "id": "2610.00019",
+      "cluster_id": "c7",
+      "essence": "  First paper essence.  ",
+      "detail": "Cross-attention bridges between $Z_v$ and $Z_m$.",
+      "why_it_matters": "Gives replayable 3D motion.",
+      "caveats": "Single benchmark.",
+      "figure_index": 1,
+      "mermaid": "```mermaid\nflowchart LR\n  A[\"rig\"] --> B[\"motion DiT\"]\n  B --> C[\"video\"]\n```"
+    },
+    {
+      "id": "9999.99999",
+      "cluster_id": "",
+      "essence": "Invented paper.",
+      "detail": "",
+      "why_it_matters": "",
+      "caveats": "",
+      "figure_index": 0,
+      "mermaid": ""
+    }
+  ],
+  "hf_section": [],
+  "trend_notes": ""
+}

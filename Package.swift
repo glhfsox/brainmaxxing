@@ -31,6 +31,11 @@ let package = Package(
             name: "DigestCoreTests",
             dependencies: ["DigestCore", .product(name: "GRDB", package: "GRDB.swift")]
         ),
+        // Live-API prompt evals: every test is gated on PROMPT_EVALS=1; plain `swift test` skips them.
+        .testTarget(
+            name: "PromptEvals",
+            dependencies: ["DigestCore"]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

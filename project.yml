@@ -1,0 +1,98 @@
+# XcodeGen spec for the app target. Source of truth; brainmaxxing.xcodeproj is generated and gitignored.
+name: brainmaxxing
+options:
+  bundleIdPrefix: com.brainmaxxing
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+packages:
+  brainmaxxing:
+    path: .
+targets:
+  brainmaxxing:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/brainmaxxing
+        excludes:
+          - "Resources/DigestWeb/**"
+    dependencies:
+      - package: brainmaxxing
+        product: DigestCore
+    settings:
+      base:
+        PRODUCT_NAME: brainmaxxing
+        PRODUCT_BUNDLE_IDENTIFIER: com.brainmaxxing.app
+        MARKETING_VERSION: "0.3.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: brainmaxxing
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.education
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+        # The build scripts below read the repo (SwiftPM, DigestWeb); Xcode's script sandbox would block that.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        DEAD_CODE_STRIPPING: YES
+      configs:
+        # Xcode omits the hardened runtime when signing ad hoc ("-"). Debug keeps that (the ad-hoc debug dylib would
+        # fail library validation); Release always gets it, Developer ID or not.
+        Release:
+          OTHER_CODE_SIGN_FLAGS: "--options=runtime"
+    postBuildScripts:
+      # The offline web bundle without dev/ (fixture, test script) -> Contents/Resources/DigestWeb.
+      - name: Copy DigestWeb (without dev/)
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          dest="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/DigestWeb"
+          mkdir -p "$dest"
+          /usr/bin/rsync -a --delete --exclude 'dev/' --exclude '.DS_Store' \
+            "${SRCROOT}/App/brainmaxxing/Resources/DigestWeb/" "$dest/"
+      # install-agent reads the templates from Contents/Resources/LaunchAgents.
+      - name: Copy LaunchAgents templates
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          dest="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/LaunchAgents"
+          mkdir -p "$dest"
+          /usr/bin/rsync -a --delete --include '*.plist.template' --exclude '*' "${SRCROOT}/LaunchAgents/" "$dest/"
+      # digest-cli and DigestMCP built from the same package, embedded next to the app
+      # binary (launchd, the chat's MCPToolProvider and Claude Desktop find them there) and signed with the app's
+      # identity (hardened runtime) before Xcode signs the bundle.
+      - name: Embed digest-cli and DigestMCP
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          config=debug
+          [ "${CONFIGURATION}" = "Release" ] && config=release
+          # Xcode's environment (SDKROOT, toolchain flags) confuses SwiftPM; build in a clean one.
+          swiftpm() {
+            /usr/bin/env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin" DEVELOPER_DIR="${DEVELOPER_DIR}" \
+              /usr/bin/xcrun swift build --package-path "${SRCROOT}" -c "$config" "$@"
+          }
+          bin=$(swiftpm --show-bin-path)
+          for product in digest-cli DigestMCP; do
+            swiftpm --product "$product"
+            dest="${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/$product"
+            /bin/cp -f "$bin/$product" "$dest"
+            /usr/bin/codesign --force --options runtime --timestamp=none \
+              --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "$dest"
+          done
+schemes:
+  brainmaxxing:
+    build:
+      targets:
+        brainmaxxing: all
+    run:
+      config: Debug
+    archive:
+      config: Release

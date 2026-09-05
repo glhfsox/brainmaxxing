@@ -1,0 +1,248 @@
+{
+  "clusters" : [
+    {
+      "id" : "c1",
+      "name" : "Low-bit training and inference",
+      "narrative" : "Two papers push precision down from opposite ends. [2610.24343] asks which **NVFP4** pretraining recipe survives at scale, while [2610.28537] recovers accuracy *after* training with data-centric PTQ. Read together: the recipe choices of the first decide how much the second has to repair. Both cite the same baseline as [2510.00001] (not in today's digest). A journal counterpart, [W4381712656], studies the same trade-off for 4-bit inference on edge accelerators; [W1000000001] is cited but not in today's digest.",
+      "paper_ids" : [
+        "2610.24343",
+        "2610.28537",
+        "W4381712656"
+      ]
+    },
+    {
+      "id" : "c2",
+      "name" : "Generation beyond tokens",
+      "narrative" : "[2610.28559] replaces next-token prediction with a flow over sequences, and [2610.28632] co-generates video and a 3D motion trajectory for arbitrary rigs. Both treat the output as a continuous object $x_t$ transported along $\\frac{dx_t}{dt} = v_\\theta(x_t, t)$.",
+      "paper_ids" : [
+        "2610.28559",
+        "2610.28632"
+      ]
+    }
+  ],
+  "costUSD" : 2.1834,
+  "counts" : {
+    "deduped" : 412,
+    "fetched" : 431,
+    "fulltext" : 5,
+    "new" : 398,
+    "selected" : 5,
+    "triaged" : 398,
+    "unscored" : 0,
+    "written" : 4
+  },
+  "date" : "2026-10-22",
+  "empty" : false,
+  "generatedAt" : "2026-10-22T04:12:09Z",
+  "hf_section" : [
+    {
+      "id" : "2610.26203",
+      "one_line" : "Agents that write their own unit tests before patching; the most-upvoted paper of the week.",
+      "title" : "Test-First Coding Agents",
+      "upvotes" : 226
+    },
+    {
+      "id" : "2610.25110",
+      "one_line" : "FP4 KV-cache for long-context serving; builds on the recipe in [2610.24343].",
+      "title" : "FP4 KV Cache at 1M Tokens",
+      "upvotes" : 41
+    },
+    {
+      "id" : "2610.19999",
+      "one_line" : "Legacy entry without title or upvotes (rendered the old way)."
+    }
+  ],
+  "model" : "claude-opus-5-5",
+  "papers" : [
+    {
+      "authors" : [
+        "Arnav Chavan",
+        "Chanhyuk Lee",
+        "Udbhav Bamba",
+        "Jaehoon Yoo",
+        "Seunghoon Hong",
+        "Aditi Raghunathan",
+        "Jinwoo Kim"
+      ],
+      "caveats" : "Perplexity only; no downstream reasoning benchmarks.",
+      "cluster_id" : "c2",
+      "detail" : "The model learns a velocity field $v_\\theta$ over embedded sequences and samples by integrating\n\n$$x_1 = x_0 + \\int_0^1 v_\\theta(x_t, t)\\,dt$$\n\nwith 8 Euler steps. Training uses the conditional flow-matching loss $\\mathcal{L} = \\mathbb{E}\\,\\|v_\\theta(x_t,t) - (x_1 - x_0)\\|^2$.",
+      "essence" : "A language model trained with flow matching instead of next-token prediction reaches parity with an AR baseline at 1.3B parameters.",
+      "figure" : null,
+      "figure_index" : 0,
+      "id" : "2610.28559",
+      "links" : {
+        "abs" : "https://arxiv.org/abs/2610.28559v1",
+        "html" : "https://arxiv.org/html/2610.28559v1",
+        "pdf" : "https://arxiv.org/pdf/2610.28559v1"
+      },
+      "mermaid" : "flowchart LR\n  A[\"noise x0\"] --> B[\"velocity net\"]\n  B --> C[\"Euler step\"]\n  C -->|8x| B\n  C --> D[\"tokens\"]",
+      "modelOmitted" : false,
+      "score" : 9,
+      "tags" : [
+        "llm",
+        "flow matching"
+      ],
+      "title" : "Large Flow Language Models",
+      "why_it_matters" : "If it holds at scale, decoding becomes parallel in sequence length."
+    },
+    {
+      "authors" : [
+        "Anjulie Agrusa",
+        "Andrei Panferov",
+        "Elizabeth Wei",
+        "Keith Wyss",
+        "Paul Gibbons",
+        "Erik Schultheis",
+        "Jinhang Choi",
+        "Frank Sun",
+        "Tijmen Blankevoort",
+        "Dan Alistarh"
+      ],
+      "caveats" : "",
+      "cluster_id" : "c1",
+      "detail" : "Compares 12 NVFP4 recipes up to 8B parameters. The winning recipe keeps the **last layer** and the attention softmax in BF16 and uses stochastic rounding on gradients; loss gap to BF16 is $< 0.5\\%$.\n\n- block size 16\n- E4M3 scales\n- `round_stochastic` on $\\nabla W$ only",
+      "essence" : "A controlled comparison of NVFP4 pretraining recipes: what to keep in high precision matters more than the rounding mode.",
+      "figure" : null,
+      "figure_index" : 0,
+      "id" : "2610.24343",
+      "links" : {
+        "abs" : "https://arxiv.org/abs/2610.24343v1",
+        "html" : "https://arxiv.org/html/2610.24343v1",
+        "pdf" : "https://arxiv.org/pdf/2610.24343v1"
+      },
+      "mermaid" : "flowchart TD\n  A[BF16 master] --> B{quantize?\n  B -- yes --> C[NVFP4 GEMM",
+      "modelOmitted" : false,
+      "score" : 8,
+      "tags" : [
+        "quantization",
+        "pretraining"
+      ],
+      "title" : "What Matters for NVFP4 Training? A Comparative Study of Low-Precision Pretraining Recipes",
+      "why_it_matters" : "Gives a default recipe for 4-bit pretraining instead of a grid search; see [2610.28537] for the post-training side."
+    },
+    {
+      "authors" : [
+        "Kartik Tandon",
+        "Lianhui Qin",
+        "Jun Gao"
+      ],
+      "caveats" : "Rigs with more than 64 joints were not evaluated.",
+      "cluster_id" : "c2",
+      "detail" : "A video DiT and a motion DiT exchange information through cross-attention bridges between latents $Z_v$ and $Z_m$; the rig graph is encoded with a GNN so topology is arbitrary.",
+      "essence" : "Generates a video and a synchronized 3D motion trajectory for a user-supplied rig of any topology.",
+      "figure" : {
+        "caption" : "Joints, Camera, Action! (JCA) generates a video and a synchronized 3D motion trajectory for a user-supplied rig of any topology.",
+        "index" : 1,
+        "paperID" : "2610.28632",
+        "path" : "figures/2610.28632/1.png",
+        "source" : "html"
+      },
+      "figure_index" : 1,
+      "id" : "2610.28632",
+      "links" : {
+        "abs" : "https://arxiv.org/abs/2610.28632v1",
+        "html" : "https://arxiv.org/html/2610.28632v1",
+        "pdf" : "https://arxiv.org/pdf/2610.28632v1"
+      },
+      "mermaid" : "sequenceDiagram\n  participant V as Video DiT\n  participant M as Motion DiT\n  V->>M: cross-attention (Z_v)\n  M->>V: cross-attention (Z_m)",
+      "modelOmitted" : false,
+      "score" : 8,
+      "tags" : [
+        "cv",
+        "generative"
+      ],
+      "title" : "Joints, Camera, Action! Co-Generating 3D Motion and Video for Arbitrary Rigs",
+      "why_it_matters" : "Replayable 3D motion from a video model, usable directly in a game engine."
+    },
+    {
+      "authors" : [
+        "Rhea Sanjay Sukthanker",
+        "Riccardo Grazzi",
+        "James Hensman",
+        "Pashmina Cameron"
+      ],
+      "caveats" : "Recovery set is 2k samples from the pretraining mix; transfer to other mixes is untested.",
+      "cluster_id" : "c1",
+      "detail" : "Chooses the calibration set by the gradient norm of the quantization error, then runs a short LoRA recovery.",
+      "essence" : "Data-centric PTQ: picking the calibration data well recovers most of the gap below 4 bits.",
+      "figure" : null,
+      "figure_index" : 0,
+      "id" : "2610.28537",
+      "links" : {
+        "abs" : "https://arxiv.org/abs/2610.28537v1",
+        "html" : "https://arxiv.org/html/2610.28537v1",
+        "pdf" : "https://arxiv.org/pdf/2610.28537v1"
+      },
+      "mermaid" : "",
+      "modelOmitted" : false,
+      "score" : 7,
+      "tags" : [
+        "quantization"
+      ],
+      "title" : "Beyond 4 bits: Data-Centric Post-training Quantization and Recovery",
+      "why_it_matters" : "Cheap to try on any checkpoint."
+    },
+    {
+      "authors" : [
+        "Shu Zhao",
+        "Tan Yu"
+      ],
+      "caveats" : "",
+      "cluster_id" : "",
+      "detail" : "",
+      "essence" : "Repairs a myopic teacher in agentic on-policy distillation without a reward model.",
+      "figure" : null,
+      "figure_index" : 0,
+      "id" : "2610.28586",
+      "links" : {
+        "abs" : "https://arxiv.org/abs/2610.28586v1",
+        "html" : "https://arxiv.org/html/2610.28586v1",
+        "pdf" : "https://arxiv.org/pdf/2610.28586v1"
+      },
+      "mermaid" : "",
+      "modelOmitted" : true,
+      "score" : 7,
+      "tags" : [
+        "agents",
+        "distillation"
+      ],
+      "title" : "Capable Teacher, Myopic Scorer: Reward-Free Teacher Repair for Agentic On-Policy Distillation",
+      "why_it_matters" : ""
+    },
+    {
+      "authors" : [
+        "Mei Lin",
+        "Tomasz Nowak",
+        "Priya Raman"
+      ],
+      "caveats" : "Abstract only: no full text for journal papers.",
+      "cluster_id" : "c1",
+      "detail" : "",
+      "essence" : "Hardware-aware 4-bit inference: per-channel scales chosen by a latency model of the accelerator, compared with [2610.28537].",
+      "figure" : null,
+      "figure_index" : 0,
+      "id" : "W4381712656",
+      "links" : {
+        "abs" : "https://doi.org/10.1016/j.neunet.2026.107812",
+        "pdf" : "https://example.org/oa/neunet-107812.pdf"
+      },
+      "mermaid" : "",
+      "modelOmitted" : false,
+      "score" : 7,
+      "tags" : [
+        "quantization",
+        "journal"
+      ],
+      "title" : "Latency-Aware 4-bit Quantization for Edge Accelerators",
+      "venue" : "Neural Networks",
+      "why_it_matters" : "A peer-reviewed data point next to today's arXiv quantization papers."
+    }
+  ],
+  "partial" : false,
+  "promptVersion" : 1,
+  "runID" : "2026-10-22T040000-dev",
+  "summary" : "Precision and generation: two papers on 4-bit training [2610.24343] [2610.28537], two on continuous generation [2610.28559] [2610.28632].",
+  "title" : "Fewer bits, smoother flows",
+  "trend_notes" : "Low-bit training appears for the third day in a row."
+}

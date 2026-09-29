@@ -1,0 +1,9 @@
+{
+  "description": "Summary that replaces the older turns of a chat about the reader's paper digest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary"],
+  "properties": {
+    "summary": {"description": "Notes on everything the assistant needs to continue the conversation: papers as [id] + title, questions, conclusions with sources, reader preferences, open threads. In the requested language.", "type": "string"}
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "description": "Grades of one generated digest against its source bundle.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["faithfulness", "unsupported_claims", "cluster_quality", "filler", "language", "language_violations", "note"],
+  "properties": {
+    "faithfulness":        {"description": "1-5. 5: every result, number and comparison is in the source text. 1: several invented or distorted results.", "type": "integer"},
+    "unsupported_claims":  {"description": "Claims not supported by the source. `kind` is `contradicted` (the source says otherwise), `absent` (the paper's text in the bundle is complete and does not contain it) or `unverifiable` (the text is truncated and the claim may come from the cut part).", "type": "array",
+      "items": {"type": "object", "additionalProperties": false, "required": ["paper_id", "field", "claim", "kind"],
+        "properties": {"paper_id": {"type": "string"}, "field": {"type": "string"}, "claim": {"type": "string"}, "kind": {"type": "string", "enum": ["contradicted", "absent", "unverifiable"]}}}},
+    "cluster_quality":     {"description": "1-5. 5: every narrative says how its papers relate (shared problem, competing approaches, one result explaining another), citing ids. 1: narratives are lists of summaries.", "type": "integer"},
+    "filler":              {"description": "1-5. 5: no filler or unsupported praise anywhere. 1: filler in most entries.", "type": "integer"},
+    "language":            {"description": "1-5 for the language rules in the rubric.", "type": "integer"},
+    "language_violations": {"description": "Short quotes that break the language rules.", "type": "array", "items": {"type": "string"}},
+    "note":                {"description": "Two or three sentences: the most important problem, if any.", "type": "string"}
+  }
+}

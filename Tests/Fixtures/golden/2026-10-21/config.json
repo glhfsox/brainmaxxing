@@ -1,0 +1,7 @@
+{
+  "explanation_level" : "engineer",
+  "interest_profile" : "ML engineer. Reads eagerly: LLM post-training and reasoning (RL for LLMs, reward models, test-time compute), agents and tool use, multi-agent systems, efficient training and inference (quantization, distillation, MoE), representation learning, geometric and topological methods in ML (differential geometry, algebraic topology applied to representations or data), probability and statistics with direct ML consequences. Skips: benchmark-only papers without a new method, domain applications with no methodological novelty, surveys, position papers.",
+  "language" : "ru",
+  "min_score" : 6,
+  "top_n" : 15
+}

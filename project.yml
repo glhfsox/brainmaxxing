@@ -12,6 +12,9 @@ settings:
 packages:
   brainmaxxing:
     path: .
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.7.0"
 targets:
   brainmaxxing:
     type: application
@@ -23,6 +26,19 @@ targets:
     dependencies:
       - package: brainmaxxing
         product: DigestCore
+      - package: Sparkle
+        product: Sparkle
+    # Merged with the generated Info.plist. Before a release the maintainer fills SUFeedURL (appcast URL) and
+    # SUPublicEDKey (printed by Sparkle's generate_keys); while SUFeedURL is empty, updates are off.
+    info:
+      path: App/Info.plist
+      properties:
+        # XcodeGen's plist template hardcodes 1.0 / 1; keep the versions on the build settings (Sparkle compares them).
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        SUFeedURL: ""
+        SUPublicEDKey: ""
+        SUEnableAutomaticChecks: true
     settings:
       base:
         PRODUCT_NAME: brainmaxxing

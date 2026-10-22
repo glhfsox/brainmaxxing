@@ -4,10 +4,10 @@ Reading 300 to 500 new arXiv papers a day is not possible, so this app does it f
 the new arXiv, OpenAlex and HuggingFace papers in your areas, ranks them against your interest profile with Claude,
 and at 10:00 shows a digest of the ones worth your time: figures from the papers, generated diagrams, links to the
 originals. The digest has a chat that can quote any fragment of it and look papers up through an MCP server; the
-same server plugs into Claude Desktop or Claude Code. Bring your own API key.
+same server plugs into Claude Desktop or Claude Code.
 
-Everything below works. What is missing for a public release is a Developer ID for signing and notarization,
-onboarding and Sparkle updates.
+Everything below works. A public build still needs a Developer ID for signing and notarization and a hosted
+appcast for updates.
 
 ## 1. How it fits together
 
@@ -88,7 +88,7 @@ One window: a sidebar with digests by date and a full-text search over all paper
 `WKWebView` (markdown-it, KaTeX and mermaid.js vendored, offline), and a chat inspector with one conversation per
 digest. Selecting text in the digest and pressing "Ask about this" (Cmd-Shift-L) puts the fragment into the chat as
 a quote with the paper id. Thumbs up and down per paper feed the next triage; a menu bar item shows status, cost
-today and "Make digest now". Settings cover categories, the profile, models, budget, the schedule and the API key.
+today and "Make digest now". Settings cover categories, the profile, models, budget and the schedule.
 
 ## 6. MCP server
 
@@ -108,8 +108,7 @@ claude mcp add brainmaxxing -- /Applications/brainmaxxing.app/Contents/MacOS/Dig
 | `search_digests(query, max?)` | FTS over past digests and chat |
 | `get_digest(date, edition?)` | a stored digest as JSON |
 
-Resources: `digest://today`, `digest://<date>`, `paper://<id>`. The server gets only `HOME`, `PATH`, `TMPDIR`,
-`LANG` and `BRAINMAXXING_HOME`; API keys never reach it.
+Resources: `digest://today`, `digest://<date>`, `paper://<id>`.
 
 ## 7. Configuration
 
@@ -135,9 +134,11 @@ with every run.
 ```
 brew install xcodegen
 swift build
-ANTHROPIC_API_KEY=... swift run digest-cli run --force  # a real run from the terminal
+swift run digest-cli run --force                        # a real run from the terminal
 xcodegen generate && xcodebuild -project brainmaxxing.xcodeproj -scheme brainmaxxing -configuration Release build
 ```
 
-The app build embeds `digest-cli` and `DigestMCP` next to its own binary. First launch: paste the API key in
-Settings, write the profile, pick categories, "Install nightly agent".
+The app build embeds `digest-cli` and `DigestMCP` next to its own binary. On first launch the app walks you
+through the profile, the categories and the nightly agent. `scripts/release.sh` makes the release DMG: Release build,
+signing, notarization and stapling when an identity is configured (`--help` lists the options). Updates go through
+Sparkle once the appcast URL and public key are set in `project.yml`.

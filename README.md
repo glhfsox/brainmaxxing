@@ -82,8 +82,6 @@ to `~/Library/LaunchAgents` and loads them; `uninstall-agent` reverts.
   fulltext/<id>.txt    figures/<id>/<n>.png    raw/<run_id>/ (API responses, pruned after 30 days)
 ```
 
-The API key lives in Keychain (`com.brainmaxxing.anthropic`). `BRAINMAXXING_HOME` overrides the directory.
-
 ## 5. App
 
 One window: a sidebar with digests by date and a full-text search over all papers, the digest itself in a

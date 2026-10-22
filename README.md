@@ -1,10 +1,10 @@
 # brainmaxxing
 
-A macOS app that reads the new arXiv, OpenAlex and HuggingFace papers in your areas every night, ranks them
-against your interest profile with Claude, and at 10:00 shows a digest of the ones worth your time: figures from
-the papers, generated diagrams, links, and a chat that can quote the digest and look papers up through MCP.
-Stack: Swift 6, SwiftUI, macOS 26, GRDB (SQLite + FTS5), WKWebView, the Swift MCP SDK, the Anthropic Messages API
-(Haiku for triage, Opus for the digest, Sonnet for chat). Bring your own API key.
+Reading 300 to 500 new arXiv papers a day is not possible, so this app does it for you. Every night it collects
+the new arXiv, OpenAlex and HuggingFace papers in your areas, ranks them against your interest profile with Claude,
+and at 10:00 shows a digest of the ones worth your time: figures from the papers, generated diagrams, links to the
+originals. The digest has a chat that can quote any fragment of it and look papers up through an MCP server; the
+same server plugs into Claude Desktop or Claude Code. Bring your own API key.
 
 Everything below works. What is missing for a public release is a Developer ID for signing and notarization,
 onboarding and Sparkle updates.

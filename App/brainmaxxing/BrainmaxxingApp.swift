@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationController.shared.install(model: model)
         Task {
             await model.start()
+            if !LaunchOptions.hidden { model.evaluateOnboarding() }
             await NotificationController.shared.requestAuthorizationIfNeeded()
             if LaunchOptions.hidden { await NotificationController.shared.postDailyIfNeeded() }
             NotificationController.shared.scheduleDaily()

@@ -16,6 +16,7 @@ struct MenuBarLabel: View {
 
 struct MenuBarContent: View {
     @Environment(AppModel.self) private var model
+    let updater: Updater
 
     var body: some View {
         if model.runner.isRunning {
@@ -33,6 +34,8 @@ struct MenuBarContent: View {
             .keyboardShortcut("o")
         SettingsLink { Text("Settings...") }
             .keyboardShortcut(",")
+        Button("Check for Updates...") { updater.checkForUpdates() }
+            .disabled(!updater.isEnabled)
         Divider()
         Button("Quit brainmaxxing") { NSApp.terminate(nil) }
             .keyboardShortcut("q")

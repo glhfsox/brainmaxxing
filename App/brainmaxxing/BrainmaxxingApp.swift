@@ -22,6 +22,10 @@ struct BrainmaxxingApp: App {
         .defaultLaunchBehavior(LaunchOptions.hidden ? .suppressed : .presented)
         .restorationBehavior(.disabled)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates...") { delegate.updater.checkForUpdates() }
+                    .disabled(!delegate.updater.isEnabled)
+            }
             CommandGroup(after: .newItem) {
                 Button("Make Digest Now") { model.requestManualRun(categories: nil) }
                     .disabled(model.runner.isRunning)
@@ -29,7 +33,7 @@ struct BrainmaxxingApp: App {
         }
 
         MenuBarExtra {
-            MenuBarContent()
+            MenuBarContent(updater: delegate.updater)
                 .environment(model)
         } label: {
             MenuBarLabel()
@@ -45,6 +49,8 @@ struct BrainmaxxingApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    let updater = Updater()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(LaunchOptions.hidden ? .accessory : .regular)
         let model = AppModel.shared

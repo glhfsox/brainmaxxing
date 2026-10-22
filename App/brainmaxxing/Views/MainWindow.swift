@@ -44,6 +44,9 @@ struct MainWindow: View {
                 showRunSheet = false
             }
         }
+        .sheet(isPresented: $model.showOnboarding) {
+            OnboardingView()
+        }
         .alert("brainmaxxing", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") { model.errorMessage = nil }
         } message: {

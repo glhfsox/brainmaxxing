@@ -41,6 +41,8 @@ final class AppModel {
 
     let chat = ChatModel()
     var showChat = true
+    /// First-launch setup sheet over the main window; see `evaluateOnboarding()`.
+    var showOnboarding = false
 
     private(set) var schedulerStatus: SchedulerStatus?
     let runner = RunController()
@@ -145,6 +147,22 @@ final class AppModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    // MARK: Onboarding
+
+    static let onboardingDoneKey = "onboardingDone"
+
+    /// Shows onboarding once (finished or skipped is remembered) while the key, the profile or `config.json` is missing.
+    func evaluateOnboarding() {
+        guard !UserDefaults.standard.bool(forKey: Self.onboardingDoneKey) else { return }
+        let noConfigFile = !FileManager.default.fileExists(atPath: paths.home.appendingPathComponent("config.json").path)
+        showOnboarding = !KeychainStore.hasAnthropicKey() || config.interestProfile == Config.defaultInterestProfile || noConfigFile
+    }
+
+    func finishOnboarding() {
+        UserDefaults.standard.set(true, forKey: Self.onboardingDoneKey)
+        showOnboarding = false
     }
 
     func reloadConfig() {

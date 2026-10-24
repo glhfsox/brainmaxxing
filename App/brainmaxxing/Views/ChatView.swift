@@ -166,7 +166,7 @@ private struct ChatErrorBanner: View {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 4) {
                 Text(message).font(.callout).textSelection(.enabled)
-                if message == ChatModel.missingKeyMessage {
+                if APIKeyMessage.offersSettings(message) {
                     SettingsLink { Text("Open Settings...") }.controlSize(.small)
                 }
             }

@@ -59,7 +59,16 @@ final class AppModel {
         .digest(date: date, edition: digests.filter { $0.date == date }.map(\.edition).max() ?? 1)
     }
 
-    private init() {}
+    /// The key read in flight or done (cached per process); nil -> read it again. One read at a time, so a second
+    /// caller waits for the same macOS dialog instead of opening another.
+    private var apiKeyTask: Task<String, any Error>?
+
+    private init() {
+        chat.apiKeyProvider = { [weak self] in
+            guard let self else { throw LLMError.missingAPIKey }
+            return try await self.apiKey()
+        }
+    }
 
     // MARK: Startup and loading
 
@@ -148,6 +157,24 @@ final class AppModel {
             errorMessage = error.localizedDescription
         }
     }
+
+    // MARK: API key
+
+    /// The Anthropic key for chat and runs: `ANTHROPIC_API_KEY`, else an interactive Keychain read, which may show the
+    /// macOS "allow access" dialog and wait on it, so it runs off the main actor. A failed read is not cached.
+    func apiKey() async throws -> String {
+        let task = apiKeyTask ?? Task.detached { try KeychainStore.resolveAnthropicKey(mode: .interactive) }
+        apiKeyTask = task
+        do {
+            return try await task.value
+        } catch {
+            if apiKeyTask == task { apiKeyTask = nil }
+            throw error
+        }
+    }
+
+    /// The key was saved, removed or granted: read it again on the next use.
+    func apiKeyMayHaveChanged() { apiKeyTask = nil }
 
     // MARK: Onboarding
 
@@ -249,20 +276,49 @@ final class AppModel {
         }
     }
 
+    /// Resolves the key here (the dialog, if any, belongs to the app) and hands it to `digest-cli` in its environment,
+    /// so the child never reads the Keychain.
     func startRun(categories: [String]?) {
-        do {
-            try runner.start(categories: categories, store: store) { [weak self] in
-                guard let self else { return }
-                await self.reloadAll()
-                // A run adds an edition of today: from nothing or an older edition of today, move to the newest.
-                switch self.selection {
-                case nil: self.selection = self.latestItem(date: self.today)
-                case let .digest(date, _)? where date == self.today: self.selection = self.latestItem(date: self.today)
-                default: break
-                }
+        guard !runner.isRunning else { return }
+        Task {
+            let key: String
+            do {
+                key = try await apiKey()
+            } catch {
+                showMainWindow()           // the alert lives in the window; the run may have been asked for from the menu
+                errorMessage = APIKeyMessage.describe(error)
+                return
             }
-        } catch {
-            errorMessage = error.localizedDescription
+            do {
+                try runner.start(categories: categories, store: store, environment: ["ANTHROPIC_API_KEY": key]) { [weak self] in
+                    guard let self else { return }
+                    await self.reloadAll()
+                    // A run adds an edition of today: from nothing or an older edition of today, move to the newest.
+                    switch self.selection {
+                    case nil: self.selection = self.latestItem(date: self.today)
+                    case let .digest(date, _)? where date == self.today: self.selection = self.latestItem(date: self.today)
+                    default: break
+                    }
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
+}
+
+/// What the app says when the API key cannot be had; the chat banner and the main alert offer Settings for these.
+enum APIKeyMessage {
+    static let missing = "No Anthropic API key. Add it in Settings > API Key."
+    static let denied = "macOS has not allowed this build of brainmaxxing to read the saved API key. Open Settings > API Key, click Grant access and choose \"Always Allow\" in the macOS dialog."
+
+    static func describe(_ error: any Error) -> String {
+        switch error {
+        case LLMError.missingAPIKey: missing
+        case LLMError.keychainAccessDenied, LLMError.keychainInteractionRequired: denied
+        default: error.localizedDescription
+        }
+    }
+
+    static func offersSettings(_ message: String?) -> Bool { message == missing || message == denied }
 }

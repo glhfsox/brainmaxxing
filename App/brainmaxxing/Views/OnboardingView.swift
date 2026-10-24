@@ -50,7 +50,7 @@ struct OnboardingView: View {
                     SecureField("sk-ant-...", text: $settings.apiKey)
                         .textFieldStyle(.roundedBorder)
                     Button("Save") { settings.saveKey(model: model) }
-                        .disabled(settings.apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(settings.keyBusy || settings.apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 if let message = settings.message { Text(message).font(.caption).foregroundStyle(.secondary) }
             case .profile:
@@ -124,11 +124,11 @@ struct OnboardingView: View {
         case .categories: settings.draft.categories = settings.saved.categories
         case .agent: break
         }
-        step == .agent ? finish(settings) : move(by: 1)
+        if step == .agent { finish(settings) } else { move(by: 1) }
     }
 
     private func advance(_ settings: SettingsModel) {
-        step == .agent ? finish(settings) : move(by: 1)
+        if step == .agent { finish(settings) } else { move(by: 1) }
     }
 
     /// Writes the profile and categories into `config.json` (also when nothing changed, so the file exists) and

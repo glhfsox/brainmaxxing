@@ -1,5 +1,6 @@
 import DigestCore
 import Observation
+import Security
 import SwiftUI
 
 /// Draft of `config.json` plus the API key and agent installer actions. Nothing is written until "Save".
@@ -12,7 +13,12 @@ final class SettingsModel {
     var draft: Config
     private(set) var saved: Config
     var apiKey = ""
+    /// An item exists (readable or not); onboarding skips its key step on it.
     private(set) var hasKey = KeychainStore.hasAnthropicKey()
+    /// From the non-interactive probe; nil until the first probe returns.
+    private(set) var keyStatus: KeychainStore.KeyStatus?
+    /// A save, removal or grant is in progress (a macOS dialog may be up).
+    private(set) var keyBusy = false
     private(set) var message: String?
     private(set) var installOutput: String?
     private(set) var installing = false
@@ -55,29 +61,80 @@ final class SettingsModel {
 
     func revert() { draft = saved }
 
+    var keyStatusText: String {
+        switch keyStatus {
+        case nil: "Checking..."
+        case .readable?: "Stored in Keychain"
+        case .denied?: "Stored by another build of brainmaxxing. This build needs your approval to read it."
+        case .missing?: "Not set"
+        }
+    }
+
+    /// Non-interactive (never a dialog); off the main actor like every Keychain call here.
+    func refreshKeyStatus() async {
+        let status = await Task.detached { KeychainStore.probeAnthropicKey() }.value
+        keyStatus = status
+        hasKey = status != .missing
+    }
+
+    /// Saves the key, then reads it right away so that a macOS dialog, if this build needs one, comes now.
     func saveKey(model: AppModel) {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { return }
-        do {
-            try KeychainStore.saveAnthropicKey(key)
-            model.chat.apiKeyMayHaveChanged()
-            apiKey = ""
-            message = "API key saved to the Keychain."
-        } catch {
-            message = error.localizedDescription
+        guard !key.isEmpty, !keyBusy else { return }
+        apiKey = ""
+        keyBusy = true
+        Task {
+            defer { keyBusy = false }
+            do {
+                try await Task.detached { try KeychainStore.saveAnthropicKey(key) }.value
+            } catch {
+                apiKey = key
+                message = error.localizedDescription
+                await refreshKeyStatus()
+                return
+            }
+            await readKey(model: model, success: "API key saved to the Keychain.", keyChanged: true)
         }
-        hasKey = KeychainStore.hasAnthropicKey()
+    }
+
+    /// "Grant access": an interactive read; macOS asks, and "Always Allow" adds this build to the item.
+    func grantAccess(model: AppModel) {
+        guard !keyBusy else { return }
+        keyBusy = true
+        Task {
+            defer { keyBusy = false }
+            await readKey(model: model, success: "Access granted.", keyChanged: false)
+        }
+    }
+
+    /// `keyChanged`: drop the app's cached key first; a grant joins a read already in flight instead (one dialog).
+    private func readKey(model: AppModel, success: String, keyChanged: Bool) async {
+        if keyChanged { model.apiKeyMayHaveChanged() }
+        do {
+            _ = try await model.apiKey()
+            message = success
+        } catch {
+            message = APIKeyMessage.describe(error)
+        }
+        await refreshKeyStatus()
     }
 
     func deleteKey(model: AppModel) {
-        do {
-            try KeychainStore.deleteAnthropicKey()
-            model.chat.apiKeyMayHaveChanged()
-            message = "API key removed."
-        } catch {
-            message = error.localizedDescription
+        guard !keyBusy else { return }
+        keyBusy = true
+        Task {
+            defer { keyBusy = false }
+            do {
+                try await Task.detached { try KeychainStore.deleteAnthropicKey() }.value
+                message = "API key removed."
+            } catch KeychainError.status(_, errSecInvalidOwnerEdit) {
+                message = "The key was stored by another build of brainmaxxing and cannot be removed from here. Delete the item \"\(KeychainStore.anthropicService)\" in Keychain Access."
+            } catch {
+                message = error.localizedDescription
+            }
+            model.apiKeyMayHaveChanged()
+            await refreshKeyStatus()
         }
-        hasKey = KeychainStore.hasAnthropicKey()
     }
 
     /// Runs the bundled `digest-cli install-agent` and shows its output.
@@ -212,15 +269,27 @@ private struct SettingsForm: View {
             Tab("API Key", systemImage: "key") {
                 Form {
                     Section("Anthropic API key") {
-                        LabeledContent("Status", value: settings.hasKey ? "Stored in Keychain" : "Not set")
+                        LabeledContent("Status") {
+                            Text(settings.keyStatusText).multilineTextAlignment(.trailing)
+                        }
+                        if settings.keyStatus == .denied {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Button("Grant access...") { settings.grantAccess(model: model) }
+                                    .disabled(settings.keyBusy)
+                                Text("macOS will ask for permission to use the key. Choose \"Always Allow\".")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                         SecureField("sk-ant-...", text: $settings.apiKey)
                         HStack {
                             Button("Save key") { settings.saveKey(model: model) }
-                                .disabled(settings.apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
+                                .disabled(settings.keyBusy || settings.apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
                             Button("Remove key", role: .destructive) { settings.deleteKey(model: model) }
-                                .disabled(!settings.hasKey)
+                                .disabled(settings.keyBusy || !settings.hasKey)
+                            if settings.keyBusy { ProgressView().controlSize(.small) }
                         }
                     }
+                    .task { await settings.refreshKeyStatus() }
                 }
                 .formStyle(.grouped)
             }

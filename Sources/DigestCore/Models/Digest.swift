@@ -94,7 +94,7 @@ public struct DigestPaper: Codable, Sendable, Equatable {
     /// The model left this paper out; `essence` is the triage one-liner.
     public var modelOmitted: Bool
     /// Copied from the paper (OpenAlex journal papers); omitted from JSON when nil.
-    public var venue: String? = nil
+    public var venue: String?
 
     enum CodingKeys: String, CodingKey {
         case id, clusterID = "cluster_id", essence, detail, whyItMatters = "why_it_matters", caveats, figureIndex = "figure_index", mermaid

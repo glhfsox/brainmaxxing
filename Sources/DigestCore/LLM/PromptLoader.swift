@@ -32,9 +32,9 @@ public struct Prompt: Sendable, Equatable {
     public let placeholders: [String]
     public let body: String
     /// `max_tokens` front-matter key; callers default to 4096 when absent.
-    public var maxTokens: Int? = nil
+    public var maxTokens: Int?
     /// `effort` front-matter key (`low` | `medium` | `high`); nil -> API default.
-    public var effort: String? = nil
+    public var effort: String?
 
     public static let defaultMaxTokens = 4096
 

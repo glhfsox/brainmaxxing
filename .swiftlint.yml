@@ -1,0 +1,62 @@
+# SwiftLint configuration. CI and the pre-push hook run `swiftlint lint --strict`, so every warning fails.
+# The rules spell out this project's conventions; SwiftLint defaults that contradict the style the code
+# already has are relaxed here instead of the code being reformatted. Size limits sit just above today's largest units so
+# growth past them is a deliberate step.
+
+# `included` keeps SwiftLint out of .build/ and build/ (walking them crashes it on deep checkouts).
+included:
+  - Sources
+  - App
+excluded:
+  - App/brainmaxxing/Resources
+
+opt_in_rules:
+  - force_unwrapping            # no force unwraps anywhere
+
+disabled_rules:
+  - trailing_comma              # multi-line literals keep the trailing comma here
+  - optional_data_string_conversion  # String(decoding:as:) is the intended lossy conversion for fetched text
+  - todo                        # TODOs are allowed when they name an owner; `todo_owner` below checks that
+  - nesting                     # Codable response models mirror the JSON of OpenAlex and HF, four levels deep
+
+# No force unwraps, no `try!`, no `as!`.
+force_unwrapping: error
+force_try: error
+force_cast: error
+
+identifier_name:
+  min_length: 1                 # q, s, i in closures and loops are fine
+  allowed_symbols: ["_"]        # Codable properties mirror snake_case API keys
+line_length:
+  warning: 200
+  error: 260
+  ignores_urls: true
+  ignores_comments: true
+  ignores_interpolated_strings: true
+cyclomatic_complexity:
+  warning: 30                   # LaTeXML text extraction is one long chain of ifs
+  error: 40
+  ignores_case_statements: true # XML/SSE parsers are big switches
+file_length:
+  warning: 800
+  error: 1200
+type_body_length:
+  warning: 650                  # Store is one actor over the whole schema
+  error: 900
+function_body_length:
+  warning: 120
+  error: 200
+function_parameter_count:
+  warning: 8
+  error: 10
+large_tuple:
+  warning: 3
+  error: 4
+
+custom_rules:
+  todo_owner:
+    name: "TODO without owner"
+    regex: 'TODO(?!\()'
+    match_kinds: [comment, comment.mark, doccomment]   # not inside string literals
+    message: "Write TODOs as `TODO(owner): ...`"
+    severity: error

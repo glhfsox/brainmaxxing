@@ -1,0 +1,18 @@
+#!/bin/sh
+# Pre-push gate: the lint and package build CI runs, on the working tree.
+# Enable once per clone:  git config core.hooksPath .githooks
+# Skip in an emergency:   git push --no-verify
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+
+if ! command -v swiftlint >/dev/null 2>&1; then
+  echo "pre-push: swiftlint is not installed (brew install swiftlint)" >&2
+  exit 1
+fi
+
+echo "pre-push: swiftlint --strict"
+swiftlint lint --strict --quiet
+
+echo "pre-push: swift build"
+swift build --quiet
+echo "pre-push: ok"

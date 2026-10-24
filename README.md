@@ -137,8 +137,9 @@ with every run.
 ## 8. Build and run
 
 ```
-brew install xcodegen
+brew install xcodegen swiftlint
 swift build
+swiftlint lint --strict                                 # same config as CI
 swift run digest-cli run --force                        # a real run from the terminal; progress lines on stderr
 xcodegen generate && xcodebuild -project brainmaxxing.xcodeproj -scheme brainmaxxing -configuration Release build
 ```
@@ -147,3 +148,7 @@ The app build embeds `digest-cli` and `DigestMCP` next to its own binary. On fir
 through the profile, the categories and the nightly agent. `scripts/release.sh` makes the release DMG: Release build,
 signing, notarization and stapling when an identity is configured (`--help` lists the options). Updates go through
 Sparkle once the appcast URL and public key are set in `project.yml`.
+
+CI (`.github/workflows/ci.yml`) runs SwiftLint, the package build and the app build on every push to `main` and every
+pull request. The same lint and build run locally before each push once the hook is enabled:
+`git config core.hooksPath .githooks` (skip once with `git push --no-verify`).

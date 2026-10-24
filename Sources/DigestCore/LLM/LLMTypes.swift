@@ -124,6 +124,8 @@ public enum LLMError: LocalizedError, Equatable {
     case missingAPIKey
     /// Unattended run: the Keychain item needs a dialog this process may not show.
     case keychainInteractionRequired
+    /// Interactive read: the user denied the dialog, or this build is not in the item's ACL (ad-hoc signing).
+    case keychainAccessDenied
     case budgetExceeded(spentUSD: Double, capUSD: Double)
     case unknownModelPricing(String)
     case promptTooLongForPricing(model: String, estimatedTokens: Int)
@@ -142,6 +144,10 @@ public enum LLMError: LocalizedError, Equatable {
         case .keychainInteractionRequired:
             "Keychain access to the Anthropic key needs your approval, which an unattended run cannot ask for: run "
                 + "`digest-cli run --force` once in a terminal and choose \"Always Allow\", or export ANTHROPIC_API_KEY"
+        case .keychainAccessDenied:
+            "macOS has not allowed this build of brainmaxxing to read the saved Anthropic key (it was stored by an earlier build, "
+                + "or the access dialog was denied): open Settings > API Key and click Grant access, then choose Always Allow in the "
+                + "macOS dialog; or export ANTHROPIC_API_KEY"
         case let .budgetExceeded(spent, cap):
             String(format: "daily LLM budget exhausted: $%.4f spent of $%.2f", spent, cap)
         case let .unknownModelPricing(model):

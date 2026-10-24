@@ -29,7 +29,8 @@ public enum KeychainStore {
     public static func read(service: String) -> String? { try? read(service: service, mode: .interactive) }
 
     /// Returns the password stored under `service`, or nil if there is none. In `.nonInteractive` mode an item that
-    /// would need a dialog throws `LLMError.keychainInteractionRequired` instead of blocking.
+    /// would need a dialog throws `LLMError.keychainInteractionRequired` instead of blocking; in `.interactive` mode a
+    /// denied read throws `LLMError.keychainAccessDenied`.
     public static func read(service: String, mode: LookupMode) throws -> String? {
         var item: CFTypeRef?
         let query = readQuery(service: service, mode: mode) as CFDictionary
@@ -64,10 +65,24 @@ public enum KeychainStore {
     static let authenticationUIKey = "u_AuthUI"
     static let authenticationUIFail = "u_AuthUIF"
 
-    /// Non-interactive mode: a status meaning "the user would have to be asked" becomes a typed error.
+    /// A status meaning "the item exists but this process may not read it" becomes a typed error: non-interactive,
+    /// the user would have to be asked; interactive, the user denied the dialog or this build is not in the ACL.
     static func check(_ status: OSStatus, mode: LookupMode) throws {
-        guard mode == .nonInteractive, status == errSecInteractionNotAllowed || status == errSecAuthFailed else { return }
-        throw LLMError.keychainInteractionRequired
+        guard status == errSecInteractionNotAllowed || status == errSecAuthFailed else { return }
+        throw mode == .nonInteractive ? LLMError.keychainInteractionRequired : LLMError.keychainAccessDenied
+    }
+
+    /// What Settings shows about the stored key.
+    public enum KeyStatus: Sendable, Equatable { case missing, readable, denied }
+
+    /// Non-interactive read that never shows a dialog; Settings shows its result.
+    public static func probeAnthropicKey() -> KeyStatus {
+        keyStatus { try read(service: anthropicService, mode: .nonInteractive) }
+    }
+
+    /// Maps a non-interactive read to a `KeyStatus`: a thrown error means the item exists but this process may not read it.
+    static func keyStatus(_ read: () throws -> String?) -> KeyStatus {
+        do { return try read() == nil ? .missing : .readable } catch { return .denied }
     }
 
     /// Adds or replaces the Anthropic key (service `com.brainmaxxing.anthropic`).
@@ -81,6 +96,10 @@ public enum KeychainStore {
 
     // Service-parameterized so tests can use a throwaway item instead of the real one.
 
+    /// Update in place; add only when there is no item. Not delete-then-add: an item made by another build cannot be
+    /// deleted (`errSecInvalidOwnerEdit`, measured), and when the delete would succeed this build already reads the item,
+    /// so re-creating it only drops the other approvals on its ACL (e.g. the nightly `digest-cli`). Read access for a
+    /// new build comes from the macOS dialog ("Always Allow"), which the app shows on demand with an interactive read.
     static func save(_ value: String, service: String) throws {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
         let data = Data(value.utf8)
@@ -108,7 +127,8 @@ public enum KeychainStore {
         return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
     }
 
-    /// `ANTHROPIC_API_KEY` from the environment first (both modes), then Keychain read in `mode`.
+    /// `ANTHROPIC_API_KEY` from the environment first (both modes), then Keychain read in `mode`. Keychain errors
+    /// (`keychainInteractionRequired`, `keychainAccessDenied`) propagate unchanged; only a missing item is `missingAPIKey`.
     public static func resolveAnthropicKey(
         mode: LookupMode = .interactive,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -127,14 +147,20 @@ public enum KeychainStore {
 /// "allow access" dialog: with `kSecUseAuthenticationUIFail` or `LAContext.interactionNotAllowed` alone a read from an
 /// untrusted binary still blocked on the dialog (macOS 26); with it, the read returns `errSecAuthFailed` at once.
 /// The API is deprecated; calling it through a protocol witness keeps the build free of deprecation warnings.
-/// The flag is process-wide, so it is restored right after the read (the CLI reads the key once, before any task).
+/// The flag is process-wide, so it is restored right after the read (the CLI reads the key once, before any task; the
+/// app's Settings probe is a single immediate read, so an overlap with an interactive read is unlikely but possible).
 private protocol LegacyKeychainUI {
     static func copyMatchingWithoutUI(_ query: CFDictionary, _ result: inout CFTypeRef?) -> OSStatus
 }
 
 private enum LegacyKeychain: LegacyKeychainUI {
+    /// Two overlapping no-UI reads would restore each other's flag and could leave UI disabled for the process.
+    private static let lock = NSLock()
+
     @available(macOS, deprecated: 10.10)
     static func copyMatchingWithoutUI(_ query: CFDictionary, _ result: inout CFTypeRef?) -> OSStatus {
+        lock.lock()
+        defer { lock.unlock() }
         var wasAllowed: DarwinBoolean = true
         SecKeychainGetUserInteractionAllowed(&wasAllowed)
         SecKeychainSetUserInteractionAllowed(false)

@@ -66,8 +66,8 @@ import Testing
         try await store.startRun(id: "run-a", startedAt: Date(), force: true, since: nil, stages: .all)
         let response = try await RunContext.$runID.withValue("run-a") { try await client.complete(request()) }
         #expect(response.usage == LLMUsage(inputTokens: 1000, outputTokens: 200, cacheReadTokens: 3000, cacheWriteTokens: 500))
-        struct X: Decodable { let x: Int }
-        #expect(try response.toolInput("triage_result", as: X.self).x == 7)
+        struct Out: Decodable { let x: Int }
+        #expect(try response.toolInput("triage_result", as: Out.self).x == 7)
         let calls = try await store.llmCalls(runID: "run-a")
         #expect(calls.count == 1)
         // 1000x0.10 + 200x0.50 + 3000x0.01 + 500x0.125 per 1M
@@ -121,6 +121,10 @@ import Testing
         #expect(throws: LLMError.keychainInteractionRequired) {
             try KeychainStore.resolveAnthropicKey(mode: .nonInteractive, environment: [:], keychain: denied)
         }
+        // A denied interactive read is not "no key": the error reaches the caller unchanged, and the env var still wins.
+        let refused: (String) throws -> String? = { _ in throw LLMError.keychainAccessDenied }
+        #expect(throws: LLMError.keychainAccessDenied) { try KeychainStore.resolveAnthropicKey(environment: [:], keychain: refused) }
+        #expect(try KeychainStore.resolveAnthropicKey(environment: ["ANTHROPIC_API_KEY": "env"], keychain: refused) == "env")
     }
 
     @Test func usageIsRecordedEvenWhenContentFailsToDecode() async throws {

@@ -113,7 +113,7 @@ import Testing
         #expect(KeychainStore.exists(service: service))
         #expect(KeychainStore.read(service: service) == "sk-first")
 
-        try KeychainStore.save("sk-second", service: service)  // update in place
+        try KeychainStore.save("sk-second", service: service)  // delete + re-add
         #expect(KeychainStore.read(service: service) == "sk-second")
 
         try KeychainStore.delete(service: service)
@@ -134,8 +134,15 @@ import Testing
 
         for status in [errSecInteractionNotAllowed, errSecAuthFailed] {
             #expect(throws: LLMError.keychainInteractionRequired) { try KeychainStore.check(status, mode: .nonInteractive) }
-            #expect(throws: Never.self) { try KeychainStore.check(status, mode: .interactive) }
+            #expect(throws: LLMError.keychainAccessDenied) { try KeychainStore.check(status, mode: .interactive) }
         }
         #expect(throws: Never.self) { try KeychainStore.check(errSecItemNotFound, mode: .nonInteractive) }
+        #expect(throws: Never.self) { try KeychainStore.check(errSecItemNotFound, mode: .interactive) }
+    }
+
+    @Test func keyStatusMapping() {
+        #expect(KeychainStore.keyStatus { nil } == .missing)
+        #expect(KeychainStore.keyStatus { "sk" } == .readable)
+        #expect(KeychainStore.keyStatus { throw LLMError.keychainInteractionRequired } == .denied)
     }
 }

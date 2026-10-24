@@ -90,7 +90,10 @@ One window: a sidebar with digests by date and a full-text search over all paper
 `WKWebView` (markdown-it, KaTeX and mermaid.js vendored, offline), and a chat inspector with one conversation per
 digest. Selecting text in the digest and pressing "Ask about this" (Cmd-Shift-L) puts the fragment into the chat as
 a quote with the paper id. Thumbs up and down per paper feed the next triage; a menu bar item shows status, cost
-today and "Make digest now". Settings cover categories, the profile, models, budget and the schedule.
+today and "Make digest now". Settings cover categories, the profile, models, budget and the schedule. While a run is
+in flight the window shows a progress card: the stage, a one-line report of what the pipeline is doing (which
+category, how many papers are scored out of the new ones, what the last batch was about), elapsed time and a
+Stop button. The window opens sized to the screen and stays resizable.
 
 ## 6. MCP server
 

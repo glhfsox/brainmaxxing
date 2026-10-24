@@ -23,12 +23,20 @@ final class RunController {
     private(set) var lastLine: String?
     /// Output of the current or last run, capped.
     private(set) var output: [String] = []
-    /// "fetched 431, new 398, triaged 120, selected 15", from the run row.
-    private(set) var progress: String?
+    /// Where the run is (`runs.progress`); nil until the pipeline reports its first step.
+    private(set) var progress: RunProgress?
+    /// The last stage the run finished, from the run row.
+    private(set) var lastStage: Stage?
+    /// "fetched 431, new 398, triaged 120, selected 15", from the run row's counts: the fallback while `progress` is nil.
+    private(set) var countsLine: String?
+    /// Stop was asked for; the CLI is winding down.
+    private(set) var isStopping = false
     private(set) var lastExitStatus: Int32?
 
     private var process: Process?
     private var pollTask: Task<Void, Never>?
+    /// The run row this child writes, pinned on the first match so a nightly run that starts meanwhile is not followed.
+    private var runID: String?
 
     /// `Contents/MacOS/digest-cli`, next to the app binary.
     static var cliURL: URL? {
@@ -41,7 +49,9 @@ final class RunController {
         return args
     }
 
-    func start(categories: [String]?, store: Store?, onExit: @escaping @MainActor () async -> Void) throws {
+    /// `environment` is merged over this process's environment for the child (the app passes `ANTHROPIC_API_KEY`).
+    func start(categories: [String]?, store: Store?, environment: [String: String] = [:],
+               onExit: @escaping @MainActor () async -> Void) throws {
         guard !isRunning else { return }
         guard let cli = Self.cliURL, FileManager.default.isExecutableFile(atPath: cli.path) else {
             throw RunControllerError.cliMissing(Self.cliURL?.path ?? "Contents/MacOS/digest-cli")
@@ -50,6 +60,7 @@ final class RunController {
         let arguments = Self.arguments(categories: categories)
         process.executableURL = cli
         process.arguments = arguments
+        process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -60,6 +71,10 @@ final class RunController {
         output = ["$ digest-cli " + arguments.joined(separator: " ")]
         lastLine = "Starting..."
         progress = nil
+        lastStage = nil
+        countsLine = nil
+        runID = nil
+        isStopping = false
         lastExitStatus = nil
         try process.run()
         self.process = process
@@ -84,7 +99,9 @@ final class RunController {
 
     /// Stops a running pipeline (SIGTERM). What the run already stored stays.
     func cancel() {
-        process?.terminate()
+        guard let process else { return }
+        isStopping = true
+        process.terminate()
     }
 
     private func append(_ line: String) {
@@ -96,9 +113,20 @@ final class RunController {
     }
 
     private func poll(store: Store?) async {
-        guard let store, let started = startedAt, let run = try? await store.lastRun(), run.startedAt >= started.addingTimeInterval(-5)
-        else { return }
-        progress = Self.describe(run)
+        guard let store else { return }
+        let run: RunRecord?
+        if let runID {
+            run = try? await store.run(id: runID)
+        } else {
+            guard let started = startedAt, let last = try? await store.lastRun(), last.startedAt >= started.addingTimeInterval(-5)
+            else { return }
+            runID = last.id
+            run = last
+        }
+        guard let run else { return }
+        progress = run.progress
+        lastStage = run.lastStage
+        countsLine = Self.describe(run)
     }
 
     private func finish(status: Int32, onExit: @MainActor () async -> Void) async {
@@ -106,9 +134,42 @@ final class RunController {
         pollTask = nil
         process = nil
         isRunning = false
+        isStopping = false
         lastExitStatus = status
         if status != 0 { lastLine = "digest-cli exited with status \(status)" + (lastLine.map { ": \($0)" } ?? "") }
         await onExit()
+    }
+
+    /// The one line the toolbar, the menu and the progress card show.
+    var statusLine: String {
+        progress?.sentence ?? countsLine ?? lastLine ?? "Starting..."
+    }
+
+    /// The short form for the sidebar's "Today" row: "Triaging 325/1,707".
+    var shortStatus: String {
+        guard let p = progress else { return "Running..." }
+        let n = { (v: Int) in v.formatted(.number.grouping(.automatic)) }
+        switch p.stage {
+        case .fetch: return p.done > 0 ? "Fetching, \(n(p.done)) so far" : "Fetching..."
+        case .dedup: return "Deduplicating..."
+        case .triage: return "Triaging \(n(p.done))/\(n(p.total ?? p.done))"
+        case .select: return "Ranking..."
+        case .fulltext:
+            let total = p.total ?? p.done + 1
+            return "Full text \(n(min(p.done + 1, total)))/\(n(total))"
+        case .digest, .chat: return "Writing the digest..."
+        }
+    }
+
+    /// The four steps the progress card lists, ticked through `lastStage`, the current one from `progress`.
+    var steps: [RunStep] {
+        let groups: [(String, [Stage])] = [("Fetch", [.fetch, .dedup]), ("Triage", [.triage, .select]), ("Full text", [.fulltext]), ("Digest", [.digest])]
+        let firstOpen = groups.firstIndex { group in lastStage.map { $0 < (group.1.last ?? .digest) } ?? true } ?? groups.count
+        let reported = progress.flatMap { p in groups.firstIndex { $0.1.contains(p.stage) } } ?? firstOpen
+        let current = max(firstOpen, reported)
+        return groups.enumerated().map { index, group in
+            RunStep(title: group.0, state: index < current ? .done : index == current ? .current : .pending)
+        }
     }
 
     static func describe(_ run: RunRecord) -> String {
@@ -118,4 +179,11 @@ final class RunController {
         if let stage = run.lastStage { parts.insert("done: \(stage.rawValue)", at: 0) }
         return parts.joined(separator: ", ")
     }
+}
+
+struct RunStep: Identifiable, Equatable {
+    enum State { case done, current, pending }
+    let title: String
+    let state: State
+    var id: String { title }
 }

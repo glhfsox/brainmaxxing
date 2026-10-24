@@ -129,6 +129,66 @@ public struct RunRecord: Sendable, Equatable {
     public var errorSummary: String?
     /// Secondary-source failures of the run (not stage errors, never partial).
     public var warnings: [String] = []
+    /// Where the run is right now (`runs.progress`); nil before the first step reports and for runs older than v8.
+    public var progress: RunProgress?
+}
+
+/// Where a running pipeline is, for the person waiting on it. The pipeline writes it to `runs.progress` at every
+/// step someone would wait on (a fetch page, a triage batch, a full text, the digest call); the app polls it and
+/// `digest-cli` prints it. `sentence` is the one line every surface shows, so they never disagree.
+public struct RunProgress: Codable, Sendable, Equatable {
+    public var stage: Stage
+    /// Units completed in the stage: papers for triage and full text, papers kept so far for fetch, 0 or 1 for digest.
+    public var done: Int
+    /// Units the stage has in all; nil while unknown (fetch).
+    public var total: Int?
+    /// What the current unit is about: the arXiv category most of the current triage batch is in ("cs.LG"), the
+    /// sources being fetched ("arXiv, OpenAlex"), the digest model. Nil when the stage has no natural topic.
+    public var topic: String?
+    /// The theme of the current unit: the top tags the model gave the last scored batch ("diffusion models, video
+    /// generation"), the title of the paper whose full text is being read.
+    public var theme: String?
+    public var updatedAt: Date
+
+    public init(stage: Stage, done: Int, total: Int? = nil, topic: String? = nil, theme: String? = nil, updatedAt: Date = Date()) {
+        self.stage = stage
+        self.done = done
+        self.total = total
+        self.topic = topic
+        self.theme = theme
+        self.updatedAt = updatedAt
+    }
+
+    /// 0...1 when the total is known.
+    public var fraction: Double? {
+        guard let total, total > 0 else { return nil }
+        return min(1, Double(done) / Double(total))
+    }
+
+    /// One sentence for the toolbar, the sidebar and the CLI.
+    public var sentence: String {
+        let n = { (v: Int) in v.formatted(.number.grouping(.automatic)) }
+        switch stage {
+        case .fetch:
+            return "Fetching \(topic ?? "papers")" + (done > 0 ? ": \(n(done)) papers so far" : "...")
+        case .dedup:
+            return "Deduplicating \(n(done)) papers..."
+        case .triage:
+            var s = "Triaged \(n(done)) of \(n(total ?? done)) new papers"
+            if let topic { s += "; now \(topic)" }
+            if let theme { s += "; last batch: \(theme)" }
+            return s
+        case .select:
+            return "Ranking \(n(done)) scored papers..."
+        case .fulltext:
+            let current = min(done + 1, total ?? done + 1)
+            return "Reading full text \(current) of \(n(total ?? current))" + (theme.map { ": \($0)" } ?? "")
+        case .digest:
+            return "Writing the digest for \(n(total ?? done)) papers" + (topic.map { " with \($0)" } ?? "") + "..."
+        case .chat:
+            return "Chat"
+        }
+    }
 }
 
 /// Task-local context of the run in progress, so that layers below `Pipeline` (LLM call records,
@@ -136,4 +196,6 @@ public struct RunRecord: Sendable, Equatable {
 /// every contract signature.
 public enum RunContext {
     @TaskLocal public static var runID: String?
+    /// The run's progress reporter (nil outside a pipeline run, e.g. `record-fixture`).
+    @TaskLocal static var progress: ProgressReporter?
 }

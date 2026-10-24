@@ -59,6 +59,7 @@ public struct ArxivClient: PaperSource {
             let entries = try await fetchPage(start: start, page: page, categories: categories)
             let fresh = entries.filter { $0.updated >= since }
             result += fresh.filter { includeReversions || $0.published >= since }
+            await RunContext.progress?.fetched(id, kept: result.count)
             // Entries within a page are not strictly ordered by `updated`: stop only when a whole page is old.
             if fresh.isEmpty || entries.count < pageSize { break }
             if page == maxPages - 1, let oldest = entries.map(\.updated).min(), oldest >= since {
@@ -177,8 +178,11 @@ private final class AtomDelegate: NSObject, XMLParserDelegate {
         case "category": if let term = attributes["term"] { current?.categories.append(term) }
         case "primary_category": current?.primaryCategory = attributes["term"]
         case "link":
-            if attributes["title"] == "pdf" { current?.pdfLink = attributes["href"] }
-            else if attributes["rel"] == "alternate" { current?.absLink = attributes["href"] }
+            if attributes["title"] == "pdf" {
+                current?.pdfLink = attributes["href"]
+            } else if attributes["rel"] == "alternate" {
+                current?.absLink = attributes["href"]
+            }
         default: break
         }
     }

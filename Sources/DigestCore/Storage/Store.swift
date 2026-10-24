@@ -340,6 +340,10 @@ public actor Store {
                 CREATE INDEX papers_doi ON papers(lower(doi)) WHERE doi IS NOT NULL;
                 """)
         }
+        m.registerMigration("v8") { db in
+            // Live progress of the run (`RunProgress` JSON), for the app's "what is it doing now" line.
+            try db.execute(sql: "ALTER TABLE runs ADD COLUMN progress TEXT")
+        }
         return m
     }
 
@@ -467,7 +471,8 @@ public actor Store {
     /// Marks a finished run as running again (`run --stage digest` re-runs a stage of an existing run).
     public func reopenRun(_ id: String) async throws {
         try await pool.write { db in
-            try db.execute(sql: "UPDATE runs SET status = ?, finished_at = NULL WHERE id = ?", arguments: [RunStatus.running.rawValue, id])
+            try db.execute(sql: "UPDATE runs SET status = ?, finished_at = NULL, progress = NULL WHERE id = ?",
+                           arguments: [RunStatus.running.rawValue, id])
         }
     }
 
@@ -492,6 +497,14 @@ public actor Store {
         let countsJSON = try Store.json(counts)
         try await pool.write { db in
             try db.execute(sql: "UPDATE runs SET counts = ? WHERE id = ?", arguments: [countsJSON, id])
+        }
+    }
+
+    /// Stores where the run is now (one row write per step; the app polls it every couple of seconds).
+    public func updateRunProgress(_ id: String, progress: RunProgress) async throws {
+        let progressJSON = try Store.json(progress)
+        try await pool.write { db in
+            try db.execute(sql: "UPDATE runs SET progress = ? WHERE id = ?", arguments: [progressJSON, id])
         }
     }
 
@@ -769,6 +782,7 @@ public actor Store {
             counts: try decode(RunCounts.self, row["counts"]), promptVersions: try decode([String: Int].self, row["prompt_versions"]),
             lastStage: (row["last_stage"] as String?).flatMap(Stage.init(rawValue:)),
             errors: Dictionary(uniqueKeysWithValues: errors.compactMap { k, v in Stage(rawValue: k).map { ($0, v) } }),
-            errorSummary: row["error_summary"], warnings: try decode([String].self, row["warnings"] ?? "[]"))
+            errorSummary: row["error_summary"], warnings: try decode([String].self, row["warnings"] ?? "[]"),
+            progress: try (row["progress"] as String?).map { try decode(RunProgress.self, $0) })
     }
 }

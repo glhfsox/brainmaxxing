@@ -44,13 +44,14 @@ public struct Pipeline: Sendable {
     private let config: Config
     private let fullText: FullTextFetcher?
     private let hfPapers: HFPapersClient?
+    private let onProgress: (@Sendable (RunProgress) -> Void)?
     private static let log = Logger(subsystem: "com.brainmaxxing", category: "pipeline")
 
     /// `fullText` nil: every paper goes to the digest with its abstract only (tests, offline runs). `hfPapers` nil: the
     /// digest's `<hf_papers>` is `(none)`. Sources other than arXiv are secondary: their failure never makes the run
-    /// partial.
+    /// partial. `onProgress` gets every progress report after it is stored in `runs.progress`.
     public init(store: Store, sources: [PaperSource], llm: LLMClient, prompts: PromptLoader, config: Config, fullText: FullTextFetcher? = nil,
-                hfPapers: HFPapersClient? = nil) {
+                hfPapers: HFPapersClient? = nil, onProgress: (@Sendable (RunProgress) -> Void)? = nil) {
         self.store = store
         self.sources = sources
         self.llm = llm
@@ -58,6 +59,7 @@ public struct Pipeline: Sendable {
         self.config = config
         self.fullText = fullText
         self.hfPapers = hfPapers
+        self.onProgress = onProgress
     }
 
     public func run(force: Bool, stages: Set<Stage> = .all, categories: [String]? = nil) async throws -> RunReport {
@@ -74,7 +76,7 @@ public struct Pipeline: Sendable {
         var report = RunReport(runID: runID)
         var promptVersions: [String: Int] = [:]
         do {
-            try await RunContext.$runID.withValue(runID) {
+            try await withRunContext(runID) {
                 try await body(&report, &promptVersions, since: since, startedAt: now, stages: stages, categories: categories ?? config.categories,
                                force: force)
             }
@@ -104,7 +106,7 @@ public struct Pipeline: Sendable {
         try await store.reopenRun(run.id)
         Self.log.info("re-running digest for run \(run.id, privacy: .public)")
         do {
-            try await RunContext.$runID.withValue(run.id) {
+            try await withRunContext(run.id) {
                 try await afterSelect(&report, &promptVersions, startedAt: run.startedAt, stages: [.fulltext, .digest], force: true)
             }
         } catch {
@@ -115,6 +117,18 @@ public struct Pipeline: Sendable {
         }
         if Task.isCancelled { try await stop(report, promptVersions: promptVersions) }
         return try await finish(report, promptVersions: promptVersions)
+    }
+
+    /// Binds the run id and a fresh progress reporter for the run's layers below `Pipeline`.
+    private func withRunContext(_ runID: String, _ operation: () async throws -> Void) async throws {
+        let reporter = ProgressReporter(store: store, runID: runID, onProgress: onProgress)
+        try await RunContext.$runID.withValue(runID) {
+            try await RunContext.$progress.withValue(reporter, operation: operation)
+        }
+    }
+
+    private func report(_ progress: RunProgress) async {
+        await RunContext.progress?.report(progress)
     }
 
     /// A cancelled run: `stoppedByUser` on the first stage it had not reached, stored as partial, then thrown.
@@ -157,11 +171,16 @@ public struct Pipeline: Sendable {
         guard stages.contains(.fetch) else { return }
 
         // Fetch: a failed source is recorded, never fatal.
+        let reporter = RunContext.progress
+        await reporter?.fetchStarted(sources.map(\.id))
         let results = await withTaskGroup(of: (SourceID, Result<SourceFetch, any Error>).self) { group in
             for source in sources {
                 group.addTask {
-                    do { return (source.id, .success(try await source.fetch(since: since, categories: categories))) }
-                    catch { return (source.id, .failure(error)) }
+                    do {
+                        let result = try await source.fetch(since: since, categories: categories)
+                        await reporter?.fetched(source.id, kept: result.papers.count)
+                        return (source.id, .success(result))
+                    } catch { return (source.id, .failure(error)) }
                 }
             }
             var all: [(SourceID, Result<SourceFetch, any Error>)] = []
@@ -204,6 +223,7 @@ public struct Pipeline: Sendable {
         // Dedup: arXiv id without version is the key; keep the newest version seen.
         let papers = Self.dedup(fetched)
         report.counts.deduped = papers.count
+        await self.report(RunProgress(stage: .dedup, done: papers.count))
         try await store.upsertPapers(papers, runID: report.runID)
         // Novelty from the store: the lag overlap is fetched again but never re-scored.
         let untriaged = try await store.untriagedIDs(among: papers.map(\.id))
@@ -226,7 +246,7 @@ public struct Pipeline: Sendable {
             // Read once: the examples are frozen for the run so every batch reuses the cached system prefix.
             let examples = try await store.feedbackExamples(limit: 20)
             let outcome = try await Triage.run(papers: newPapers, prompt: prompt, config: config, llm: llm, store: store, runID: report.runID,
-                                               feedbackExamples: examples)
+                                               feedbackExamples: examples, progress: { await reporter?.report($0) })
             report.counts.triaged = outcome.scores.count
             report.counts.unscored = outcome.unscored
             if outcome.partial { report.partial = true }
@@ -239,6 +259,7 @@ public struct Pipeline: Sendable {
         // window. Runs on whatever was scored, so a partial triage still yields a ranked list.
         guard stages.contains(.select) else { return }
         let pool = try await store.selectionPool(windowStart: since)
+        await self.report(RunProgress(stage: .select, done: pool.count))
         let selected = Triage.select(pool.map { (paper: $0.paper, score: $0.score) }, topN: config.topN, minScore: config.minScore)
         try await store.markSelected(runID: report.runID, orderedIDs: selected)
         report.counts.selected = selected.count
@@ -337,15 +358,17 @@ public struct Pipeline: Sendable {
     /// not fetched again. Failures leave the paper abstract-only and are never fatal. Returns papers with text.
     private func fetchFullTexts(_ papers: [RankedPaper]) async throws -> Int {
         var count = 0
-        for ranked in papers {
+        // OpenAlex journal papers are abstract-only: `fulltext="none"` in the bundle.
+        let arxiv = papers.filter { ArxivClient.isArxivID($0.paper.id) }
+        for (index, ranked) in arxiv.enumerated() {
             let paper = ranked.paper
-            // OpenAlex journal papers are abstract-only: `fulltext="none"` in the bundle.
-            guard ArxivClient.isArxivID(paper.id) else { continue }
             if try await store.fullTextSource(paperID: paper.id) != nil {
                 count += 1
                 continue
             }
             guard let fullText else { continue }
+            // Progress counts papers tried, not texts stored, so the line never repeats a number after a failed fetch.
+            await report(RunProgress(stage: .fulltext, done: index, total: arxiv.count, theme: Self.shortTitle(paper.title)))
             do {
                 let result = try await fullText.fetch(paper)
                 try await store.saveFullText(paperID: paper.id, text: result.text, source: result.source)
@@ -382,6 +405,7 @@ public struct Pipeline: Sendable {
                                              recentClusters: try await store.recentClusterNames(days: 7, before: date), papers: papers, hfPapers: hf)
             let request = try DigestWriter.request(prompt: prompt, system: try DigestWriter.systemText(prompt, config: config),
                                                    bundle: bundle, model: config.models.digest)
+            await self.report(RunProgress(stage: .digest, done: 0, total: papers.count, topic: config.models.digest))
             let output = try await DigestWriter.call(request, toolName: prompt.toolName ?? "", llm: llm)
             let (clusters, digestPapers) = DigestWriter.normalize(output, papers: papers)
             digest = Digest(title: output.title.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -395,6 +419,11 @@ public struct Pipeline: Sendable {
         digest.costUSD = try await store.costByStage(runID: report.runID).values.reduce(0, +)
         digest.edition = try await store.saveDigest(digest)
         return digest
+    }
+
+    /// A title for a progress line: about 80 characters, "..." when cut.
+    static func shortTitle(_ title: String) -> String {
+        title.count <= 80 ? title : title.prefix(77).trimmingCharacters(in: .whitespaces) + "..."
     }
 
     func bundlePapers(_ selected: [RankedPaper]) async throws -> [BundlePaper] {

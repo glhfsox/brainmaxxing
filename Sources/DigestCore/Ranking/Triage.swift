@@ -152,12 +152,36 @@ public enum Triage {
             .prefix(max(0, topN)).map(\.paper.id)
     }
 
-    /// Runs all batches sequentially (the first call writes the cached system prefix, the rest read it).
-    /// Budget exhaustion and auth errors (401/403) stop the stage with `partial = true`; another failed batch is
-    /// skipped and recorded. A batch cut off by `max_tokens` is split in two and each half retried once; a half
-    /// that is still cut off is counted as unscored.
+    /// What one batch call came back with; computed in a child task, applied by the parent.
+    enum BatchCall: Sendable {
+        case scored(items: [TriageItem], missing: [String])
+        case truncated
+        case failed(any Error)
+    }
+
+    /// The child-task part of a batch: the call and validation, nothing that touches the store or the outcome.
+    static func call(_ llm: LLMClient, _ request: LLMRequest, toolName: String, batch: [RawPaper]) async -> BatchCall {
+        do {
+            let response = try await llm.complete(request)
+            if response.stopReason == "max_tokens" { return .truncated }
+            let (items, missing) = validate(try response.toolInput(toolName, as: TriageResult.self), batch: batch)
+            return .scored(items: items, missing: missing)
+        } catch {
+            return .failed(error)
+        }
+    }
+
+    /// Runs the batches with at most `config.triageConcurrency` (clamped to 1...8) calls in flight. Batches go one at a
+    /// time until a call returns a response, so that call writes the cached system prefix and the rest read it instead
+    /// of each paying the cache write.
+    /// Budget exhaustion and auth errors (401/403) stop scheduling with `partial = true`; batches already in flight
+    /// finish and are stored. Another failed batch is skipped and recorded. A batch cut off by `max_tokens` is split in
+    /// two and each half retried once; a half that is still cut off is counted as unscored. When the task is cancelled
+    /// no new batch starts and late results are dropped; the outcome holds what was stored.
+    /// Store writes and `outcome` changes happen in this task as results arrive; `scores` are sorted by paper id.
     /// `feedbackExamples` are read once by the caller and frozen for the run, so every batch shares the cached system prefix.
-    /// `progress` gets one `.triage` report before every batch.
+    /// `progress` gets one `.triage` report as each batch is launched; `done` is the number of scores stored so far, so it
+    /// repeats when several batches launch together.
     public static func run(papers: [RawPaper], prompt: Prompt, config: Config, llm: LLMClient, store: Store, runID: String,
                            feedbackExamples: [FeedbackExample] = [],
                            progress: (@Sendable (RunProgress) async -> Void)? = nil) async throws -> TriageOutcome {
@@ -167,56 +191,85 @@ public enum Triage {
             log.notice("triage prompt v\(prompt.version) was written for \(prompt.model, privacy: .public), config uses \(config.models.triage, privacy: .public)")
         }
         let system = try systemText(prompt, config: config, feedbackExamples: feedbackExamples)
+        let concurrency = min(8, max(1, config.triageConcurrency))
+        let toolName = prompt.toolName ?? ""
         var queue = batches(papers).map { (batch: $0, isHalf: false) }
         var next = 0
         var lastTheme: String?
-        while next < queue.count {
-            let (batch, isHalf) = queue[next]
-            next += 1
-            await progress?(RunProgress(stage: .triage, done: outcome.scores.count, total: papers.count, topic: majorityCategory(batch),
-                                        theme: lastTheme))
-            let result: TriageResult
-            do {
-                let response = try await llm.complete(try request(batch: batch, prompt: prompt, system: system, model: config.models.triage))
-                if response.stopReason == "max_tokens" {
-                    if !isHalf, batch.count > 1 {
-                        log.warning("triage batch starting \(batch.first?.id ?? "", privacy: .public) hit max_tokens; splitting")
-                        let mid = batch.count / 2
-                        queue.insert(contentsOf: [(Array(batch[..<mid]), true), (Array(batch[mid...]), true)], at: next)
-                    } else {
-                        log.warning("triage batch starting \(batch.first?.id ?? "", privacy: .public) hit max_tokens again; \(batch.count) papers unscored")
-                        outcome.unscored += batch.count
-                    }
-                    continue
+        var warm = false     // a call has returned a response, so the system prefix is cached
+        var stopped = false  // a fatal error or cancellation: no new batches
+
+        func apply(_ batch: [RawPaper], isHalf: Bool, _ result: BatchCall) async throws {
+            if Task.isCancelled {
+                // A cancelled task cannot write to the store; what is stored so far is the outcome.
+                stopped = true
+                outcome.partial = true
+                return
+            }
+            switch result {
+            case .truncated:
+                warm = true
+                if !isHalf, batch.count > 1 {
+                    log.warning("triage batch starting \(batch.first?.id ?? "", privacy: .public) hit max_tokens; splitting")
+                    let mid = batch.count / 2
+                    queue.insert(contentsOf: [(Array(batch[..<mid]), true), (Array(batch[mid...]), true)], at: next)
+                } else {
+                    log.warning("triage batch starting \(batch.first?.id ?? "", privacy: .public) hit max_tokens again; \(batch.count) papers unscored")
+                    outcome.unscored += batch.count
                 }
-                result = try response.toolInput(prompt.toolName ?? "", as: TriageResult.self)
-            } catch LLMError.budgetExceeded(let spent, let cap) {
-                log.warning("budget reached during triage; \(outcome.scores.count) papers scored")
-                outcome.partial = true
-                outcome.error = LLMError.budgetExceeded(spentUSD: spent, capUSD: cap)
-                break
-            } catch let error as LLMError where error.isAuthFailure {
-                // Every further call would fail the same way.
-                log.error("triage stopped: \(error.localizedDescription, privacy: .public)")
-                outcome.partial = true
-                outcome.error = error
-                break
-            } catch {
-                log.error("triage batch starting \(batch.first?.id ?? "", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-                outcome.partial = true
-                outcome.error = error
-                continue
+            case let .failed(error):
+                if error is CancellationError {
+                    stopped = true
+                    outcome.partial = true
+                } else if case let LLMError.budgetExceeded(spent, cap) = error {
+                    log.warning("budget reached during triage; \(outcome.scores.count) papers scored")
+                    stopped = true
+                    outcome.partial = true
+                    outcome.error = LLMError.budgetExceeded(spentUSD: spent, capUSD: cap)
+                } else if let error = error as? LLMError, error.isAuthFailure {
+                    // Every further call would fail the same way.
+                    log.error("triage stopped: \(error.localizedDescription, privacy: .public)")
+                    stopped = true
+                    outcome.partial = true
+                    outcome.error = error
+                } else {
+                    log.error("triage batch starting \(batch.first?.id ?? "", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                    outcome.partial = true
+                    // Keep the error that stopped the stage, if any, over a later per-batch failure.
+                    if !stopped { outcome.error = error }
+                }
+            case let .scored(items, missing):
+                warm = true
+                lastTheme = topTags(items)
+                if !missing.isEmpty {
+                    log.warning("model left \(missing.count) papers unscored: \(missing.joined(separator: ","), privacy: .public)")
+                }
+                let scores = items.map { TriageScore(paperID: $0.id, score: $0.score, oneLine: $0.oneLine, tags: $0.tags, promptVersion: prompt.version) }
+                try await store.saveTriageScores(runID: runID, scores)
+                outcome.scores += scores
+                outcome.unscored += missing.count
             }
-            let (items, missing) = validate(result, batch: batch)
-            lastTheme = topTags(items)
-            if !missing.isEmpty {
-                log.warning("model left \(missing.count) papers unscored: \(missing.joined(separator: ","), privacy: .public)")
-            }
-            let scores = items.map { TriageScore(paperID: $0.id, score: $0.score, oneLine: $0.oneLine, tags: $0.tags, promptVersion: prompt.version) }
-            try await store.saveTriageScores(runID: runID, scores)
-            outcome.scores += scores
-            outcome.unscored += missing.count
         }
+
+        try await withThrowingTaskGroup(of: (batch: [RawPaper], isHalf: Bool, result: BatchCall).self) { group in
+            var inFlight = 0
+            while true {
+                while !stopped, !Task.isCancelled, next < queue.count, inFlight < (warm ? concurrency : 1) {
+                    let (batch, isHalf) = queue[next]
+                    next += 1
+                    await progress?(RunProgress(stage: .triage, done: outcome.scores.count, total: papers.count, topic: majorityCategory(batch),
+                                                theme: lastTheme))
+                    let request = try request(batch: batch, prompt: prompt, system: system, model: config.models.triage)
+                    group.addTask { (batch, isHalf, await call(llm, request, toolName: toolName, batch: batch)) }
+                    inFlight += 1
+                }
+                guard let done = try await group.next() else { break }
+                inFlight -= 1
+                try await apply(done.batch, isHalf: done.isHalf, done.result)
+            }
+        }
+        if Task.isCancelled { outcome.partial = true }
+        outcome.scores.sort { $0.paperID < $1.paperID }
         return outcome
     }
 }

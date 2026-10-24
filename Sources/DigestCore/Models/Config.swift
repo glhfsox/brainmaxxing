@@ -109,6 +109,8 @@ public struct Config: Codable, Sendable, Equatable {
     public var openalexMaxPerRun: Int
     /// HF Daily Papers kept for the digest's `<hf_papers>`.
     public var hfTopK: Int
+    /// Triage batches in flight at once after the first; clamped to 1...8 where it is used.
+    public var triageConcurrency: Int
 
     public init(
         categories: [String] = Config.defaultCategories,
@@ -128,7 +130,8 @@ public struct Config: Codable, Sendable, Equatable {
         sources: Sources = Sources(),
         openalexSubfields: [String] = Config.defaultOpenAlexSubfields,
         openalexMaxPerRun: Int = 1000,
-        hfTopK: Int = 10
+        hfTopK: Int = 10,
+        triageConcurrency: Int = 4
     ) {
         self.categories = categories
         self.interestProfile = interestProfile
@@ -148,6 +151,7 @@ public struct Config: Codable, Sendable, Equatable {
         self.openalexSubfields = openalexSubfields
         self.openalexMaxPerRun = openalexMaxPerRun
         self.hfTopK = hfTopK
+        self.triageConcurrency = triageConcurrency
     }
 
     enum CodingKeys: String, CodingKey {
@@ -169,6 +173,7 @@ public struct Config: Codable, Sendable, Equatable {
         case openalexSubfields = "openalex_subfields"
         case openalexMaxPerRun = "openalex_max_per_run"
         case hfTopK = "hf_top_k"
+        case triageConcurrency = "triage_concurrency"
     }
 
     public init(from decoder: Decoder) throws {
@@ -192,6 +197,7 @@ public struct Config: Codable, Sendable, Equatable {
         openalexSubfields = try c.decodeIfPresent([String].self, forKey: .openalexSubfields) ?? d.openalexSubfields
         openalexMaxPerRun = try c.decodeIfPresent(Int.self, forKey: .openalexMaxPerRun) ?? d.openalexMaxPerRun
         hfTopK = try c.decodeIfPresent(Int.self, forKey: .hfTopK) ?? d.hfTopK
+        triageConcurrency = try c.decodeIfPresent(Int.self, forKey: .triageConcurrency) ?? d.triageConcurrency
     }
 
     /// Reads `config.json` from `home`; a missing file means all defaults.

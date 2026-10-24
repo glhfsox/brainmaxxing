@@ -54,7 +54,7 @@ import Testing
         llm.run.withLock { $0 = task }
         await #expect(throws: PipelineError.self) { _ = try await task.value }
 
-        #expect(log.stage(.triage).count == 2)  // the second batch's report runs in the cancelled task
+        #expect(log.stage(.triage).count == 1)  // no batch is launched after the cancel
         let record = try #require(try await store.lastRun())
         #expect(record.status == .partial && record.partial && record.finishedAt != nil)
         #expect(record.errors.values.contains("stopped by user"))

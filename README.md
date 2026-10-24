@@ -53,7 +53,9 @@ flowchart TB
   starts four days before the last complete run (arXiv announces with a lag), capped at seven; only papers with no
   score from any earlier run go to triage.
 - **Triage.** Haiku scores batches of 25 abstracts against the interest profile plus the 20 newest thumbs up and
-  down from the app, all behind one cached prefix. The top 15 with score 6 or more that were never shown before are
+  down from the app, all behind one cached prefix. The first batch runs alone and writes that prefix; the rest run
+  up to four at a time (`triage_concurrency`, 1 to 8), so a big night takes a fraction of the time at the same
+  cost. The top 15 with score 6 or more that were never shown before are
   selected; a quiet weekend therefore shows the week's best unshown papers.
 - **Full text.** arXiv HTML first, then the PDF through PDFKit (text only), two figures per paper. Any failure
   leaves the paper abstract-only and never fails the run.

@@ -80,7 +80,9 @@ final class CountsPeekingLLM: LLMClient {
             if index == 1 { throw LLMError.budgetExceeded(spentUSD: 4, capUSD: 4) }
             return scoreAll(ids)
         }
-        let report = try await pipeline(store: store, sources: [FixtureSource(id: .arxiv, papers: fixturePapers)], llm: llm)
+        // One batch at a time, so the call that is refused is always the second batch.
+        let report = try await pipeline(store: store, sources: [FixtureSource(id: .arxiv, papers: fixturePapers)], llm: llm,
+                                        config: Config(triageConcurrency: 1))
             .run(force: true, stages: Stage.select.throughHere)
         #expect(report.partial)
         #expect(report.counts.triaged == 25)
@@ -167,7 +169,8 @@ final class CountsPeekingLLM: LLMClient {
             if index == 1 { throw LLMError.budgetExceeded(spentUSD: 4, capUSD: 4) }
             return scoreAll(ids)
         }
-        let first = try await pipeline(store: store, sources: [FixtureSource(id: .arxiv, papers: fixturePapers)], llm: stopping)
+        let first = try await pipeline(store: store, sources: [FixtureSource(id: .arxiv, papers: fixturePapers)], llm: stopping,
+                                       config: Config(triageConcurrency: 1))
             .run(force: true, stages: Stage.select.throughHere)
         #expect(first.partial && first.counts.triaged == 25)
 

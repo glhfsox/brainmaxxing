@@ -106,7 +106,8 @@ struct Run: AsyncParsableCommand {
                 let pipeline = Pipeline(store: env.store, sources: sources, llm: llm,
                                         prompts: try PromptLoader.bundled(pins: config.promptPins), config: config,
                                         fullText: ArxivFullTextFetcher(rateLimiter: arxivLimiter),
-                                        hfPapers: config.sources.hfPapers ? HFPapersClient(archive: archive) : nil)
+                                        hfPapers: config.sources.hfPapers ? HFPapersClient(archive: archive) : nil,
+                                        onProgress: { Console.err($0.sentence) })
                 if stage == .digest {
                     try await printReport(try await StopSignals.cancelling { try await pipeline.rerunDigest() }, store: env.store, home: env.paths.home)
                     return

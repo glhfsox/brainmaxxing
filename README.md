@@ -134,7 +134,7 @@ with every run.
 ```
 brew install xcodegen
 swift build
-swift run digest-cli run --force                        # a real run from the terminal
+swift run digest-cli run --force                        # a real run from the terminal; progress lines on stderr
 xcodegen generate && xcodebuild -project brainmaxxing.xcodeproj -scheme brainmaxxing -configuration Release build
 ```
 

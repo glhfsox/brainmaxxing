@@ -116,6 +116,31 @@ public enum Triage {
         return TriageItem(id: item.id, oneLine: oneLine, tags: Array(tags.prefix(maxTags)), score: min(10, max(0, item.score)))
     }
 
+    /// The primary category (fallback: first category) most papers of the batch are in; ties go to the first seen.
+    static func majorityCategory(_ batch: [RawPaper]) -> String? {
+        mostFrequent(batch.compactMap { $0.primaryCategory ?? $0.categories.first }, limit: 1).first
+    }
+
+    /// The 3 most frequent tags of a scored batch joined with ", "; nil when it has none.
+    static func topTags(_ items: [TriageItem]) -> String? {
+        let tags = mostFrequent(items.flatMap(\.tags), limit: 3)
+        return tags.isEmpty ? nil : tags.joined(separator: ", ")
+    }
+
+    /// Distinct values by count descending, ties in order of first appearance.
+    private static func mostFrequent(_ values: [String], limit: Int) -> [String] {
+        var counts: [String: Int] = [:]
+        var order: [String] = []
+        for v in values {
+            if counts[v] == nil { order.append(v) }
+            counts[v, default: 0] += 1
+        }
+        return Array(order.enumerated().sorted { a, b in
+            let (ca, cb) = (counts[a.element] ?? 0, counts[b.element] ?? 0)
+            return ca != cb ? ca > cb : a.offset < b.offset
+        }.map(\.element).prefix(limit))
+    }
+
     /// Top `topN` with `score >= minScore`; ties by `updated` desc, then id.
     public static func select(_ scored: [(paper: RawPaper, score: Int)], topN: Int, minScore: Int) -> [String] {
         scored.filter { $0.score >= minScore }
@@ -132,8 +157,10 @@ public enum Triage {
     /// skipped and recorded. A batch cut off by `max_tokens` is split in two and each half retried once; a half
     /// that is still cut off is counted as unscored.
     /// `feedbackExamples` are read once by the caller and frozen for the run, so every batch shares the cached system prefix.
+    /// `progress` gets one `.triage` report before every batch.
     public static func run(papers: [RawPaper], prompt: Prompt, config: Config, llm: LLMClient, store: Store, runID: String,
-                           feedbackExamples: [FeedbackExample] = []) async throws -> TriageOutcome {
+                           feedbackExamples: [FeedbackExample] = [],
+                           progress: (@Sendable (RunProgress) async -> Void)? = nil) async throws -> TriageOutcome {
         var outcome = TriageOutcome()
         guard !papers.isEmpty else { return outcome }
         if prompt.model != config.models.triage {
@@ -142,9 +169,12 @@ public enum Triage {
         let system = try systemText(prompt, config: config, feedbackExamples: feedbackExamples)
         var queue = batches(papers).map { (batch: $0, isHalf: false) }
         var next = 0
+        var lastTheme: String?
         while next < queue.count {
             let (batch, isHalf) = queue[next]
             next += 1
+            await progress?(RunProgress(stage: .triage, done: outcome.scores.count, total: papers.count, topic: majorityCategory(batch),
+                                        theme: lastTheme))
             let result: TriageResult
             do {
                 let response = try await llm.complete(try request(batch: batch, prompt: prompt, system: system, model: config.models.triage))
@@ -178,6 +208,7 @@ public enum Triage {
                 continue
             }
             let (items, missing) = validate(result, batch: batch)
+            lastTheme = topTags(items)
             if !missing.isEmpty {
                 log.warning("model left \(missing.count) papers unscored: \(missing.joined(separator: ","), privacy: .public)")
             }

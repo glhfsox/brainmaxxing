@@ -41,7 +41,9 @@ struct PaperSearchView: View {
     @State private var search = PaperSearchModel()
 
     var body: some View {
-        HSplitView {
+        // Not HSplitView: it turns its children's sizes into a window minimum wider than the screen (the window then
+        // grows off-screen and cannot be resized). A plain HStack only adds the two minimums.
+        HStack(spacing: 0) {
             List(search.results, id: \.id, selection: $search.selectedID) { paper in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(paper.title).lineLimit(2)
@@ -50,7 +52,7 @@ struct PaperSearchView: View {
                 }
                 .tag(paper.id)
             }
-            .frame(minWidth: 280)
+            .frame(minWidth: 160, idealWidth: 320, maxWidth: 360)
             .overlay {
                 if let message = search.message {
                     ContentUnavailableView(message, systemImage: "magnifyingglass")
@@ -59,6 +61,7 @@ struct PaperSearchView: View {
                                            description: Text("Titles, abstracts and full texts of every paper seen."))
                 }
             }
+            Divider()
             Group {
                 if let paper = search.selected {
                     PaperDetail(paper: paper)
@@ -66,7 +69,7 @@ struct PaperSearchView: View {
                     Color.clear
                 }
             }
-            .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minWidth: 180, maxWidth: .infinity, maxHeight: .infinity)
         }
         .searchable(text: $search.query, prompt: "Search papers")
         .task(id: search.query) {

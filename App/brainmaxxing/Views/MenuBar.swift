@@ -20,8 +20,8 @@ struct MenuBarContent: View {
 
     var body: some View {
         if model.runner.isRunning {
-            Text("Making digest... \(model.runner.progress ?? "")")
-            if let line = model.runner.lastLine { Text(line) }
+            Text(model.runner.statusLine)
+            if let line = model.runner.lastLine, line != model.runner.statusLine { Text(line) }
             Button("Stop run") { model.runner.cancel() }
         } else if let status = model.runner.lastExitStatus, status != 0 {
             Text("Last manual run failed (exit \(status))")
@@ -50,6 +50,7 @@ enum MenuStatus {
         lines.append(hasTodayDigest ? "Today's digest is ready" : "No digest today yet")
         if let run = s.lastRun {
             lines.append("Last run: \(run.startedAt.formatted(date: .abbreviated, time: .shortened)) - \(run.status.rawValue)\(run.partial ? ", partial" : "")")
+            if run.status == .running, let progress = run.progress { lines.append(progress.sentence) }
         } else {
             lines.append("Last run: none")
         }

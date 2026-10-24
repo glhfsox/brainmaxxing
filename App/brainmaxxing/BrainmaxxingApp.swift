@@ -18,7 +18,11 @@ struct BrainmaxxingApp: App {
             MainWindow()
                 .environment(model)
         }
-        .defaultSize(width: 1280, height: 820)
+        // No state restoration, so every launch uses this: about 80% of the screen it opens on, at most 1280x820.
+        .defaultWindowPlacement { _, context in
+            let visible = context.defaultDisplay.visibleRect.size
+            return WindowPlacement(.center, size: CGSize(width: min(1280, visible.width * 0.8), height: min(820, visible.height * 0.8)))
+        }
         .defaultLaunchBehavior(LaunchOptions.hidden ? .suppressed : .presented)
         .restorationBehavior(.disabled)
         .commands {

@@ -10,21 +10,22 @@ struct MainWindow: View {
         @Bindable var model = model
         NavigationSplitView {
             SidebarView()
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 260)
         } detail: {
             DetailView()
         }
         .inspector(isPresented: $model.showChat) {
             ChatView()
-                .inspectorColumnWidth(min: 280, ideal: 340, max: 520)
+                .inspectorColumnWidth(min: 240, ideal: 260, max: 520)
         }
         .toolbar {
             ToolbarItem(placement: .status) {
                 if model.runner.isRunning {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
-                        Text(model.runner.progress ?? model.runner.lastLine ?? "Running...")
-                            .font(.caption).lineLimit(1).frame(maxWidth: 360)
+                        Text(model.runner.statusLine)
+                            .font(.caption).lineLimit(1).truncationMode(.tail).frame(maxWidth: 360)
+                            .help(model.runner.statusLine)
                     }
                 }
             }
@@ -68,7 +69,8 @@ struct SidebarView: View {
                     Label {
                         VStack(alignment: .leading) {
                             Text("Today")
-                            Text(model.runner.isRunning ? "Running..." : "No digest yet").font(.caption).foregroundStyle(.secondary)
+                            Text(model.runner.isRunning ? model.runner.shortStatus : "No digest yet").font(.caption).foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
                     } icon: { Image(systemName: "calendar") }
                     .tag(SidebarItem.digest(date: model.today, edition: 1))
@@ -161,13 +163,7 @@ struct NoDigestView: View {
 
     var body: some View {
         if model.runner.isRunning {
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Making the digest...").font(.headline)
-                if let progress = model.runner.progress { Text(progress).font(.callout).foregroundStyle(.secondary) }
-                if let line = model.runner.lastLine { Text(line).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(3) }
-            }
-            .padding()
+            RunProgressCard(runner: model.runner)
         } else {
             ContentUnavailableView {
                 Label(date == model.today ? "No digest today yet" : "No digest for \(date)", systemImage: "doc.richtext")

@@ -4,6 +4,7 @@ import SwiftUI
 struct MainWindow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @State private var showRunSheet = false
 
     var body: some View {
@@ -49,6 +50,12 @@ struct MainWindow: View {
             OnboardingView()
         }
         .alert("brainmaxxing", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
+            if APIKeyMessage.offersSettings(model.errorMessage) {
+                Button("Open Settings...") {
+                    model.errorMessage = nil
+                    openSettings()
+                }
+            }
             Button("OK") { model.errorMessage = nil }
         } message: {
             Text(model.errorMessage ?? "")

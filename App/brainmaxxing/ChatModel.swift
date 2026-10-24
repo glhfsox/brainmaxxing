@@ -36,10 +36,11 @@ struct PendingTurn: Equatable {
 final class ChatModel {
     /// Only models the cost meter can price; anything else would be refused by `AnthropicClient`.
     static let modelChoices = ModelPricing.table.keys.sorted()
-    static let missingKeyMessage = "No Anthropic API key. Add it in Settings > API Key."
 
     var store: Store?
     var config = Config()
+    /// Where the key comes from (`AppModel.apiKey()`); the chat never reads the Keychain itself.
+    var apiKeyProvider: (@MainActor () async throws -> String)?
 
     /// The open digest's date, if a digest is open; offered as the digest conversation.
     private(set) var digestDate: String?
@@ -79,8 +80,6 @@ final class ChatModel {
     private var sessions: [ChatScope: ChatSession] = [:]
     /// What the cached sessions and `llm` were built with; a new key, model or config drops them.
     private var sessionBasis: SessionBasis?
-    /// The key the sessions use; nil -> read it again (Keychain) before the next send.
-    private var apiKey: String?
     /// Shared by every conversation, so the budget check sees all chat calls in flight.
     private var llm: AnthropicClient?
     private var costMeter: (meter: CostMeter, budget: Double)?
@@ -139,9 +138,6 @@ final class ChatModel {
 
     func dismissError() { errors[scope] = nil }
 
-    /// Settings saved or removed the key: read it again before the next send.
-    func apiKeyMayHaveChanged() { apiKey = nil }
-
     /// The digest list changed (new edition, finished run): sessions keep the digest they loaded first, so make each
     /// reload it before its next message.
     func digestsChanged() async {
@@ -175,7 +171,7 @@ final class ChatModel {
                 session = try await self.session(for: scope, store: store)
             } catch {
                 // Nothing was sent: `finish` puts the draft and quotes back for another try.
-                errors[scope] = Self.describe(error)
+                errors[scope] = APIKeyMessage.describe(error)
                 await finish(scope)
                 return
             }
@@ -219,14 +215,8 @@ final class ChatModel {
     }
 
     private func session(for scope: ChatScope, store: Store) async throws -> ChatSession {
-        let apiKey: String
-        if let known = self.apiKey {
-            apiKey = known
-        } else {
-            // The Keychain read may wait on the "allow access" dialog (interactive): keep it off the main actor.
-            apiKey = try await Task.detached { try KeychainStore.resolveAnthropicKey(mode: .interactive) }.value
-            self.apiKey = apiKey
-        }
+        guard let apiKeyProvider else { throw LLMError.missingAPIKey }
+        let apiKey = try await apiKeyProvider()
         var config = self.config
         config.models.chat = model
         let basis = SessionBasis(apiKey: apiKey, config: config)
@@ -254,12 +244,6 @@ final class ChatModel {
         return meter
     }
 
-    private static func describe(_ error: Error) -> String {
-        if case LLMError.missingAPIKey = error {
-            return missingKeyMessage
-        }
-        return error.localizedDescription
-    }
 }
 
 /// One line per tool call for the transcript ("searched arXiv: ...").
